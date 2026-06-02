@@ -1,0 +1,21 @@
+.match-card {
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--card-background);
+  display: grid;
+  gap: 10px;
+}
+
+.match-card__teams {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+.match-card__info {
+  display: flex;
+  justify-content: space-between;
+  color: #475569;
+  font-size: 0.95rem;
+}
