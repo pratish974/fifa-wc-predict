@@ -1,0 +1,33 @@
+name: React Compile and Security Check
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm ci
+
+    # NEW: Scans your libraries for known older vulnerabilities
+    - name: Check Package Vulnerabilities
+      run: npm audit --audit-level=high
+      env:
+        CI: true
+
+    - name: Compile Project
+      run: npm run build

@@ -1,0 +1,24 @@
+.leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card-background);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.leaderboard-table th,
+.leaderboard-table td {
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.leaderboard-table th {
+  background: #f1f5f9;
+  font-weight: 700;
+}
+
+.leaderboard-table tbody tr:last-child td {
+  border-bottom: none;
+}
