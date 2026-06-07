@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchUserById, setCurrentUser } from '../../services/userService';
 
 const users = ['amit', 'ram', 'rohit', 'admin'];
@@ -6,6 +7,7 @@ const users = ['amit', 'ram', 'rohit', 'admin'];
 export default function LoginPage() {
   const [user, setUser] = useState('');
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   const login = async () => {
     if (!user) return;
@@ -21,7 +23,7 @@ export default function LoginPage() {
     }
 
     setLoading(false);
-    window.location.href = '/dashboard';
+    navigate('/dashboard');
   };
 
   return (
