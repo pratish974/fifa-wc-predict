@@ -48,7 +48,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './dist' 
+          path: './build' # CHANGE THIS if your build folder is not 'build'
 
       # Deploys the uploaded artifact to GitHub Pages
       - name: Deploy to GitHub Pages
