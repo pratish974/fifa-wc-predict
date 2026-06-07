@@ -4,6 +4,8 @@ on:
   push:
     branches: [ main, master ] # Triggers when you push to main or master
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
