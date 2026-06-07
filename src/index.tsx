@@ -9,7 +9,7 @@ import fifaEmblem from './assets/nation_icons/2026_FIFA_World_Cup_emblem.svg.web
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename="/fifa-wc-predict">
       <App />
     </BrowserRouter>
   </React.StrictMode>
