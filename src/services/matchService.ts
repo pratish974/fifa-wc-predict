@@ -15,30 +15,12 @@ import {
 import { db } from '../firebase/firebase';
 import { Match } from '../models/Match';
 
-const convertFirestoreTimestamp = (value: any): string => {
-  if (!value) return new Date().toISOString();
-  
-  // Handle Firestore Timestamp objects
-  if (value instanceof Timestamp) {
-    return value.toDate().toISOString();
-  }
-  
-  // Handle Date objects
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  
-  // Handle ISO strings
-  if (typeof value === 'string') {
-    return value;
-  }
-  
-  // Handle numeric timestamps (milliseconds)
-  if (typeof value === 'number') {
-    return new Date(value).toISOString();
-  }
-  
-  return new Date().toISOString();
+// Return the raw Firestore timestamp/value unchanged.
+// We previously converted timestamps to ISO strings here, but that caused
+// timezone/identity issues when rendering and filtering. Keep the original
+// value so callers can decide how to parse/format it.
+const convertFirestoreTimestamp = (value: any): any => {
+  return value;
 };
 
 // Demo data fallback for when Firebase is unavailable
@@ -96,7 +78,9 @@ export const getMatches = async (): Promise<Match[]> => {
         winner: data.winner || null,
         predictions: data.predictions,
         pendingUsers: data.pendingUsers,
-        pointsCalculated: data.pointsCalculated
+        pointsCalculated: data.pointsCalculated,
+        votedRight: data.votedRight || [],
+        votedWrong: data.votedWrong || []
       };
 
       return match;
@@ -120,7 +104,15 @@ export const getUpcomingMatches = async (): Promise<Match[]> => {
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
-      return [];
+      console.warn('No upcoming matches found in Firestore, using demo data for upcoming matches');
+      const nowMs = now.getTime();
+      return demoDemoMatches.filter(m => {
+        try {
+          return new Date(m.date).getTime() > nowMs;
+        } catch {
+          return false;
+        }
+      });
     }
 
     return snapshot.docs.map((doc) => {
@@ -139,14 +131,24 @@ export const getUpcomingMatches = async (): Promise<Match[]> => {
         winner: data.winner || null,
         predictions: data.predictions,
         pendingUsers: data.pendingUsers,
-        pointsCalculated: data.pointsCalculated
+        pointsCalculated: data.pointsCalculated,
+        votedRight: data.votedRight || [],
+        votedWrong: data.votedWrong || []
       };
 
       return match;
     });
   } catch (error) {
     console.error('Error fetching upcoming matches from Firestore:', error);
-    return [];
+    console.warn('Returning demo upcoming matches due to error');
+    const nowMs = new Date().getTime();
+    return demoDemoMatches.filter(m => {
+      try {
+        return new Date(m.date).getTime() > nowMs;
+      } catch {
+        return false;
+      }
+    });
   }
 };
 
@@ -205,19 +207,25 @@ export const finalizeMatch = async (matchDocId: string, winner: string): Promise
     const preds = Array.isArray(data.predictions) ? data.predictions : [];
 
     const batch = writeBatch(db);
-
     const votedRight: string[] = [];
     const votedWrong: string[] = [];
+    const userDeltas = new Map<string, number>();
+
+    const normalizeAnswer = (value: unknown) =>
+      String(value || '').toString().trim().toLowerCase();
+
+    const normalizedWinner = normalizeAnswer(winner);
+    const isTieWinner = normalizedWinner === 'tied' || normalizedWinner === 'tie' || normalizedWinner === 'draw';
 
     for (const p of preds) {
-      const uid = p.userId || p.user || p.userName || p.user?.id;
+      const uid = p.userId || p.user || p.userName || (p.user && p.user.id);
       if (!uid) continue;
 
-      // scoring rules: if winner is 'TIED' then correct predictions ("TIED") get 0, incorrect -10
-      // otherwise predicted === winner => +10, else -10
+      const prediction = normalizeAnswer(p.prediction);
       let delta = 0;
-      if (winner === 'TIED') {
-        if ((p.prediction || '').toString().toLowerCase() === 'tied' || (p.prediction || '').toString().toLowerCase() === 'tie' || (p.prediction || '').toString().toLowerCase() === 'tied') {
+
+      if (isTieWinner) {
+        if (prediction === 'tied' || prediction === 'tie' || prediction === 'draw') {
           delta = 0;
           votedRight.push(uid);
         } else {
@@ -225,7 +233,7 @@ export const finalizeMatch = async (matchDocId: string, winner: string): Promise
           votedWrong.push(uid);
         }
       } else {
-        if ((p.prediction || '').toString().toLowerCase() === (winner || '').toString().toLowerCase()) {
+        if (prediction === normalizedWinner) {
           delta = 10;
           votedRight.push(uid);
         } else {
@@ -234,11 +242,17 @@ export const finalizeMatch = async (matchDocId: string, winner: string): Promise
         }
       }
 
+      userDeltas.set(uid, (userDeltas.get(uid) || 0) + delta);
+    }
+
+    for (const [uid, delta] of userDeltas.entries()) {
+      if (delta === 0) continue;
       const userRef = doc(db, 'users', uid);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) continue;
       batch.update(userRef, { points: increment(delta) });
     }
 
-    // update match doc: set status COMPLETED, winner, votedRight/votedWrong lists
     batch.update(ref, {
       status: 'COMPLETED',
       winner: winner,
