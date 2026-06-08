@@ -15,7 +15,7 @@ export interface Match {
 
   group?: string;
 
-  date: string;
+  date: any;
   location?: string;
   status?: 'OPEN' | 'COMPLETED';
 

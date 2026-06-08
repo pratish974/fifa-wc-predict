@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
-import useCurrentUser from '../../hooks/useCurrentUser';
-import { getMatches, getUpcomingMatches, submitPrediction, finalizeMatch } from '../../services/matchService';
-import { getAllUsers } from '../../services/userService';
-import { getLeaderboard } from '../../services/leaderboardService';
-import LeaderboardTable from '../../components/LeaderboardTable/LeaderboardTable';
-import { Leaderboard } from '../../models/Leaderboard';
-import { Match } from '../../models/Match';
-import { getNationIcon } from '../../constants/nationsIcons';
+import { useEffect, useMemo, useState } from "react";
+import useCurrentUser from "../../hooks/useCurrentUser";
+import {
+  getMatches,
+  getUpcomingMatches,
+  submitPrediction,
+  finalizeMatch,
+} from "../../services/matchService";
+import { getAllUsers } from "../../services/userService";
+import { getLeaderboard } from "../../services/leaderboardService";
+import LeaderboardTable from "../../components/LeaderboardTable/LeaderboardTable";
+import { Leaderboard } from "../../models/Leaderboard";
+import { Match } from "../../models/Match";
+import { getNationIcon } from "../../constants/nationsIcons";
 
 const todayDate = new Date();
 const yesterdayDate = new Date(todayDate);
@@ -21,49 +26,53 @@ const formatMatchDateString = (value: string) => {
 
 const demoMatches: Match[] = [
   {
-    matchId: 'demo-1',
-    homeTeam: 'Mexico',
-    awayTeam: 'South Africa',
+    matchId: "demo-1",
+    homeTeam: "Mexico",
+    awayTeam: "South Africa",
     date: todayDate.toISOString(),
-    location: 'Mexico City Stadium',
-    status: 'OPEN',
-    winner: null
+    location: "Mexico City Stadium",
+    status: "OPEN",
+    winner: null,
   },
   {
-    matchId: 'demo-2',
-    homeTeam: 'South Korea',
-    awayTeam: 'Czech Republic',
+    matchId: "demo-2",
+    homeTeam: "South Korea",
+    awayTeam: "Czech Republic",
     date: tomorrowDate.toISOString(),
-    location: 'Estadio Guadalajara',
-    status: 'OPEN',
-    winner: null
+    location: "Estadio Guadalajara",
+    status: "OPEN",
+    winner: null,
   },
   {
-    matchId: 'demo-3',
-    homeTeam: 'Brazil',
-    awayTeam: 'Morocco',
+    matchId: "demo-3",
+    homeTeam: "Brazil",
+    awayTeam: "Morocco",
     date: yesterdayDate.toISOString(),
-    location: 'New York New Jersey Stadium',
-    status: 'COMPLETED',
-    winner: 'Brazil'
+    location: "New York New Jersey Stadium",
+    status: "COMPLETED",
+    winner: "Brazil",
   },
   {
-    matchId: 'demo-4',
-    homeTeam: 'United States',
-    awayTeam: 'Paraguay',
+    matchId: "demo-4",
+    homeTeam: "United States",
+    awayTeam: "Paraguay",
     date: yesterdayDate.toISOString(),
-    location: 'Los Angeles Stadium',
-    status: 'COMPLETED',
-    winner: 'United States'
-  }
+    location: "Los Angeles Stadium",
+    status: "COMPLETED",
+    winner: "United States",
+  },
 ];
 
 export default function DashboardPage() {
   const [matches, setMatches] = useState<Match[]>(demoMatches);
   const [upcomingFromService, setUpcomingFromService] = useState<Match[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [selectedPredictions, setSelectedPredictions] = useState<Record<string, string>>({});
-  const [selectedFinals, setSelectedFinals] = useState<Record<string, string>>({});
+  const [selectedPredictions, setSelectedPredictions] = useState<
+    Record<string, string>
+  >({});
+  const [selectedFinals, setSelectedFinals] = useState<Record<string, string>>(
+    {},
+  );
   const [leaderboard, setLeaderboard] = useState<Leaderboard[]>([]);
   const { user } = useCurrentUser();
 
@@ -96,9 +105,9 @@ export default function DashboardPage() {
 
   const todayLabel = useMemo(() => {
     return new Date().toLocaleDateString(undefined, {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric'
+      weekday: "long",
+      month: "long",
+      day: "numeric",
     });
   }, []);
 
@@ -110,17 +119,32 @@ export default function DashboardPage() {
 
   const parseMatchDate = (value: unknown): Date | null => {
     if (!value) return null;
-    if (typeof value === 'string' || typeof value === 'number') {
+    if (typeof value === "string" || typeof value === "number") {
       const date = new Date(value);
       return isNaN(date.getTime()) ? null : date;
     }
 
-    if (typeof value === 'object' && value !== null && 'toDate' in value) {
-      try {
-        const date = (value as any).toDate();
+    if (typeof value === "object" && value !== null) {
+      const v: any = value;
+      // Firestore Timestamp instance
+      if (typeof v.toDate === "function") {
+        try {
+          const date = v.toDate();
+          return isNaN(date.getTime()) ? null : date;
+        } catch {
+          return null;
+        }
+      }
+
+      // Plain object with seconds/nanoseconds (e.g. serialized timestamp)
+      if (typeof v.seconds === "number") {
+        const ms =
+          v.seconds * 1000 +
+          (typeof v.nanoseconds === "number"
+            ? Math.floor(v.nanoseconds / 1e6)
+            : 0);
+        const date = new Date(ms);
         return isNaN(date.getTime()) ? null : date;
-      } catch {
-        return null;
       }
     }
 
@@ -135,59 +159,84 @@ export default function DashboardPage() {
 
   const isMatchToday = (match: Match) => {
     const date = parseMatchDate(match.date);
-    return date ? normalizeDate(date) === todayStart : false;
+    if (!date) return false;
+    const today = new Date();
+    return (
+      date.getFullYear() === today.getFullYear() &&
+      date.getMonth() === today.getMonth() &&
+      date.getDate() === today.getDate()
+    );
   };
 
   const votedNames = (match: Match) => {
-    return (match.predictions || [])
-      .map((p: any) => {
-        const u = allUsers.find(uu => uu.id === (p.userId || p.user));
-        return u && u.role !== 'ADMIN' ? u.name : null;
-      })
-      .filter(Boolean)
-      .join(', ') || 'None';
+    return (
+      (match.predictions || [])
+        .map((p: any) => {
+          const u = allUsers.find((uu) => uu.id === (p.userId || p.user));
+          return u && u.role !== "ADMIN" ? u.name : null;
+        })
+        .filter(Boolean)
+        .join(", ") || "None"
+    );
   };
 
   const notVotedNames = (match: Match) => {
     return (
       allUsers
-        .filter(u => u.role !== 'ADMIN' && !(match.predictions || []).some((p: any) => (p.userId || p.user) === u.id))
-        .map(u => u.name)
-        .join(', ') || 'None'
+        .filter(
+          (u) =>
+            u.role !== "ADMIN" &&
+            !(match.predictions || []).some(
+              (p: any) => (p.userId || p.user) === u.id,
+            ),
+        )
+        .map((u) => u.name)
+        .join(", ") || "None"
     );
   };
 
   const votedRightNames = (match: Match) => {
-    return (match.votedRight || [])
-      .map((id: string) => {
-        const u = allUsers.find(uu => uu.id === id);
-        return u && u.role !== 'ADMIN' ? u.name : null;
-      })
-      .filter(Boolean)
-      .join(', ') || 'None';
+    return (
+      (match.votedRight || [])
+        .map((id: string) => {
+          const u = allUsers.find((uu) => uu.id === id);
+          return u && u.role !== "ADMIN" ? u.name : null;
+        })
+        .filter(Boolean)
+        .join(", ") || "None"
+    );
   };
 
   const votedWrongNames = (match: Match) => {
-    return (match.votedWrong || [])
-      .map((id: string) => {
-        const u = allUsers.find(uu => uu.id === id);
-        return u && u.role !== 'ADMIN' ? u.name : null;
-      })
-      .filter(Boolean)
-      .join(', ') || 'None';
+    return (
+      (match.votedWrong || [])
+        .map((id: string) => {
+          const u = allUsers.find((uu) => uu.id === id);
+          return u && u.role !== "ADMIN" ? u.name : null;
+        })
+        .filter(Boolean)
+        .join(", ") || "None"
+    );
   };
 
   const renderTeamLabel = (team?: string) => {
-    const name = team || 'TBD';
+    const name = team || "TBD";
     const icon = getNationIcon(name);
 
     return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+      <span
+        style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
+      >
         {icon ? (
           <img
             src={icon}
             alt={`${name} flag`}
-            style={{ width: 24, height: 16, objectFit: 'cover', borderRadius: 2 }}
+            style={{
+              width: 24,
+              height: 16,
+              objectFit: "cover",
+              borderRadius: 2,
+            }}
           />
         ) : null}
         <span>{name}</span>
@@ -195,10 +244,8 @@ export default function DashboardPage() {
     );
   };
 
-  const todayMatches = matches.filter((match) => {
-    const date = parseMatchDate(match.date);
-    return date ? normalizeDate(date) === todayStart : false;
-  });
+  const todayMatches = matches.filter(isMatchToday);
+  console.log("Today matches:", todayMatches);
 
   const pastMatches = matches.filter((match) => {
     const date = parseMatchDate(match.date);
@@ -217,15 +264,28 @@ export default function DashboardPage() {
       return da.getTime() - db.getTime();
     });
 
-  const displayedUpcoming = upcomingFromService.length > 0 ? upcomingFromService : upcomingMatches;
+  const displayedUpcoming = (
+    upcomingFromService.length > 0 ? upcomingFromService : upcomingMatches
+  ).filter((match) => !isMatchToday(match));
 
   const handleSubmitPrediction = async (match: Match, selected: string) => {
     if (!match.id || !user) return;
     const ok = await submitPrediction(match.id, user.id, selected);
     if (ok) {
       // Optimistically update local state
-      const newPred = { matchId: match.id, userId: user.id, prediction: selected, submittedAt: new Date().toISOString() };
-      setMatches((prev) => prev.map(m => m.id === match.id ? { ...m, predictions: [...(m.predictions || []), newPred] } : m));
+      const newPred = {
+        matchId: match.id,
+        userId: user.id,
+        prediction: selected,
+        submittedAt: new Date().toISOString(),
+      };
+      setMatches((prev) =>
+        prev.map((m) =>
+          m.id === match.id
+            ? { ...m, predictions: [...(m.predictions || []), newPred] }
+            : m,
+        ),
+      );
     }
   };
 
@@ -241,99 +301,141 @@ export default function DashboardPage() {
   };
 
   return (
-    <div style={{ padding: '24px' }}>
-      {/*
-        Legacy dashboard UI:
-        <h1>Today's Matches</h1>
-        {matches.map((match) => (
-          <div key={match.matchId} style={{ border: '1px solid gray', marginBottom: '10px', padding: '10px' }}>
-            <h3>{match.team1} vs {match.team2}</h3>
-            <p>Status: {match.status}</p>
-          </div>
-        ))}
-      */}
-
+    <div style={{ padding: "24px" }}>
       <h1>Dashboard</h1>
 
       {/* Current user info */}
       {user ? (
-        <div style={{ marginBottom: '12px' }}>
-          <strong>Signed in as:</strong> {user.name} ({user.role}) — {user.points} pts
+        <div style={{ marginBottom: "12px" }}>
+          <strong>Signed in as:</strong> {user.name} ({user.role}) —{" "}
+          {user.points} pts
         </div>
       ) : null}
 
-      <details open style={{ marginBottom: '24px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px', background: 'var(--card-background)' }}>
-        <summary style={{ fontSize: '1.1rem', fontWeight: 700, cursor: 'pointer' }}>
+      <details
+        open
+        style={{
+          marginBottom: "24px",
+          border: "1px solid var(--border-color)",
+          borderRadius: "12px",
+          padding: "16px",
+          background: "var(--card-background)",
+        }}
+      >
+        <summary
+          style={{ fontSize: "1.1rem", fontWeight: 700, cursor: "pointer" }}
+        >
           Today's Matches - {todayLabel}
         </summary>
-        <div style={{ marginTop: '16px' }}>
+        <div style={{ marginTop: "16px" }}>
           {todayMatches.length === 0 ? (
             <p>No matches scheduled for today.</p>
           ) : (
             todayMatches.map((match) => (
               <div
-                key={match.matchId || `${match.team1}_${match.team2}_${match.date}`}
+                key={
+                  match.matchId || `${match.team1}_${match.team2}_${match.date}`
+                }
                 style={{
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  marginBottom: '14px',
-                  background: 'white'
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  marginBottom: "14px",
+                  background: "white",
                 }}
               >
-                <h3 style={{ margin: '0 0 8px' }}>
-                  {renderTeamLabel(match.team1 || match.homeTeam)} vs {renderTeamLabel(match.team2 || match.awayTeam)}
+                <h3 style={{ margin: "0 0 8px" }}>
+                  {renderTeamLabel(match.team1 || match.homeTeam)} vs{" "}
+                  {renderTeamLabel(match.team2 || match.awayTeam)}
                 </h3>
-                <p style={{ margin: '0 0 6px' }}>
+                <p style={{ margin: "0 0 6px" }}>
                   <strong>Date:</strong> {formatMatchDateString(match.date)}
                 </p>
                 <p style={{ margin: 0 }}>
                   <strong>Status:</strong> {match.status}
                 </p>
                 {/* Prediction UI */}
-                {user && match.status !== 'COMPLETED' ? (
+                {user && match.status !== "COMPLETED" ? (
                   <div style={{ marginTop: 12 }}>
-                    {user.role === 'USER' ? (
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {user.role === "USER" ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
                         <select
-                          value={selectedPredictions[match.id || ''] || ''}
-                          onChange={(e) => setSelectedPredictions(prev => ({ ...prev, [match.id || '']: e.target.value }))}
+                          value={selectedPredictions[match.id || ""] || ""}
+                          onChange={(e) =>
+                            setSelectedPredictions((prev) => ({
+                              ...prev,
+                              [match.id || ""]: e.target.value,
+                            }))
+                          }
                           disabled={!isMatchToday(match)}
                         >
                           <option value="">Select winner</option>
-                          <option value={match.team1 || match.homeTeam}>{match.team1 || match.homeTeam}</option>
-                          <option value={match.team2 || match.awayTeam}>{match.team2 || match.awayTeam}</option>
+                          <option value={match.team1 || match.homeTeam}>
+                            {match.team1 || match.homeTeam}
+                          </option>
+                          <option value={match.team2 || match.awayTeam}>
+                            {match.team2 || match.awayTeam}
+                          </option>
                         </select>
                         <button
                           onClick={async () => {
-                            const val = selectedPredictions[match.id || ''];
+                            const val = selectedPredictions[match.id || ""];
                             if (!val) return;
                             await handleSubmitPrediction(match, val);
                           }}
-                          disabled={!!(match.predictions && match.predictions.find(p => p.userId === user.id)) || !isMatchToday(match)}
+                          disabled={
+                            !!(
+                              match.predictions &&
+                              match.predictions.find(
+                                (p) => p.userId === user.id,
+                              )
+                            ) || !isMatchToday(match)
+                          }
                         >
                           Submit
                         </button>
                       </div>
-                    ) : user.role === 'ADMIN' ? (
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    ) : user.role === "ADMIN" ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
                         <select
-                          value={selectedFinals[match.id || ''] || ''}
-                          onChange={(e) => setSelectedFinals(prev => ({ ...prev, [match.id || '']: e.target.value }))}
+                          value={selectedFinals[match.id || ""] || ""}
+                          onChange={(e) =>
+                            setSelectedFinals((prev) => ({
+                              ...prev,
+                              [match.id || ""]: e.target.value,
+                            }))
+                          }
                         >
                           <option value="">Select result</option>
-                          <option value={match.team1 || match.homeTeam}>{match.team1 || match.homeTeam}</option>
-                          <option value={match.team2 || match.awayTeam}>{match.team2 || match.awayTeam}</option>
-                          <option value={'TIED'}>TIED</option>
+                          <option value={match.team1 || match.homeTeam}>
+                            {match.team1 || match.homeTeam}
+                          </option>
+                          <option value={match.team2 || match.awayTeam}>
+                            {match.team2 || match.awayTeam}
+                          </option>
+                          <option value={"TIED"}>TIED</option>
                         </select>
                         <button
                           onClick={async () => {
-                            const val = selectedFinals[match.id || ''];
+                            const val = selectedFinals[match.id || ""];
                             if (!val) return;
                             await handleFinalizeMatch(match, val);
                           }}
-                          disabled={String(match.status) === 'COMPLETED'}
-                        >Finalize
+                          disabled={String(match.status) === "COMPLETED"}
+                        >
+                          Finalize
                         </button>
                       </div>
                     ) : null}
@@ -342,15 +444,23 @@ export default function DashboardPage() {
 
                 {/* Footer: voted / not voted or votedRight / votedWrong */}
                 <div style={{ marginTop: 12, opacity: 0.8, fontSize: 12 }}>
-                  {match.status !== 'COMPLETED' ? (
+                  {match.status !== "COMPLETED" ? (
                     <>
-                      <div style={{ color: 'green' }}>{`Voted: ${votedNames(match)}`}</div>
-                      <div style={{ color: 'orange' }}>{`Not Voted: ${notVotedNames(match)}`}</div>
+                      <div
+                        style={{ color: "green" }}
+                      >{`Voted: ${votedNames(match)}`}</div>
+                      <div
+                        style={{ color: "orange" }}
+                      >{`Not Voted: ${notVotedNames(match)}`}</div>
                     </>
                   ) : (
                     <>
-                      <div style={{ color: 'green' }}>{`Voted Right: ${votedRightNames(match)}`}</div>
-                      <div style={{ color: 'orange' }}>{`Voted Wrong: ${votedWrongNames(match)}`}</div>
+                      <div
+                        style={{ color: "green" }}
+                      >{`Voted Right: ${votedRightNames(match)}`}</div>
+                      <div
+                        style={{ color: "orange" }}
+                      >{`Voted Wrong: ${votedWrongNames(match)}`}</div>
                     </>
                   )}
                 </div>
@@ -360,81 +470,132 @@ export default function DashboardPage() {
         </div>
       </details>
 
-      <details style={{ marginBottom: '24px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px', background: 'var(--card-background)' }}>
-        <summary style={{ fontSize: '1.1rem', fontWeight: 700, cursor: 'pointer' }}>
+      <details
+        style={{
+          marginBottom: "24px",
+          border: "1px solid var(--border-color)",
+          borderRadius: "12px",
+          padding: "16px",
+          background: "var(--card-background)",
+        }}
+      >
+        <summary
+          style={{ fontSize: "1.1rem", fontWeight: 700, cursor: "pointer" }}
+        >
           Upcoming Matches
         </summary>
-        <div style={{ marginTop: '16px', display: 'grid', gap: '16px' }}>
+        <div style={{ marginTop: "16px", display: "grid", gap: "16px" }}>
           {displayedUpcoming.length === 0 ? (
             <p>No upcoming matches scheduled.</p>
           ) : (
             displayedUpcoming.map((match) => (
               <div
-                key={match.matchId || `${match.team1}_${match.team2}_${match.date}`}
+                key={
+                  match.matchId || `${match.team1}_${match.team2}_${match.date}`
+                }
                 style={{
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  background: 'white',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  background: "white",
+                  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
                 }}
               >
-                <h3 style={{ margin: '0 0 8px' }}>
-                  {renderTeamLabel(match.team1 || match.homeTeam)} vs {renderTeamLabel(match.team2 || match.awayTeam)}
+                <h3 style={{ margin: "0 0 8px" }}>
+                  {renderTeamLabel(match.team1 || match.homeTeam)} vs{" "}
+                  {renderTeamLabel(match.team2 || match.awayTeam)}
                 </h3>
-                <p style={{ margin: '0 0 6px' }}>
+                <p style={{ margin: "0 0 6px" }}>
                   <strong>Date:</strong> {formatMatchDateString(match.date)}
                 </p>
-                <p style={{ margin: '0 0 6px' }}>
-                  <strong>Location:</strong> {match.location || 'TBD'}
+                <p style={{ margin: "0 0 6px" }}>
+                  <strong>Location:</strong> {match.location || "TBD"}
                 </p>
                 <p style={{ margin: 0 }}>
-                  <strong>Status:</strong> {match.status || 'TBD'}
+                  <strong>Status:</strong> {match.status || "TBD"}
                 </p>
                 {/* Prediction UI for upcoming */}
-                {user && match.status !== 'COMPLETED' ? (
+                {user && match.status !== "COMPLETED" ? (
                   <div style={{ marginTop: 12 }}>
-                    {user.role === 'USER' ? (
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {user.role === "USER" ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
                         <select
-                          value={selectedPredictions[match.id || ''] || ''}
-                          onChange={(e) => setSelectedPredictions(prev => ({ ...prev, [match.id || '']: e.target.value }))}
+                          value={selectedPredictions[match.id || ""] || ""}
+                          onChange={(e) =>
+                            setSelectedPredictions((prev) => ({
+                              ...prev,
+                              [match.id || ""]: e.target.value,
+                            }))
+                          }
                           disabled={!isMatchToday(match)}
                         >
                           <option value="">Select winner</option>
-                          <option value={match.team1 || match.homeTeam}>{match.team1 || match.homeTeam}</option>
-                          <option value={match.team2 || match.awayTeam}>{match.team2 || match.awayTeam}</option>
+                          <option value={match.team1 || match.homeTeam}>
+                            {match.team1 || match.homeTeam}
+                          </option>
+                          <option value={match.team2 || match.awayTeam}>
+                            {match.team2 || match.awayTeam}
+                          </option>
                         </select>
                         <button
                           onClick={async () => {
-                            const val = selectedPredictions[match.id || ''];
+                            const val = selectedPredictions[match.id || ""];
                             if (!val) return;
                             await handleSubmitPrediction(match, val);
                           }}
-                          disabled={!!(match.predictions && match.predictions.find(p => p.userId === user.id)) || !isMatchToday(match)}
+                          disabled={
+                            !!(
+                              match.predictions &&
+                              match.predictions.find(
+                                (p) => p.userId === user.id,
+                              )
+                            ) || !isMatchToday(match)
+                          }
                         >
                           Submit
                         </button>
                       </div>
-                    ) : user.role === 'ADMIN' ? (
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    ) : user.role === "ADMIN" ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
                         <select
-                          value={selectedFinals[match.id || ''] || ''}
-                          onChange={(e) => setSelectedFinals(prev => ({ ...prev, [match.id || '']: e.target.value }))}
+                          value={selectedFinals[match.id || ""] || ""}
+                          onChange={(e) =>
+                            setSelectedFinals((prev) => ({
+                              ...prev,
+                              [match.id || ""]: e.target.value,
+                            }))
+                          }
                         >
                           <option value="">Select result</option>
-                          <option value={match.team1 || match.homeTeam}>{match.team1 || match.homeTeam}</option>
-                          <option value={match.team2 || match.awayTeam}>{match.team2 || match.awayTeam}</option>
-                          <option value={'TIED'}>TIED</option>
+                          <option value={match.team1 || match.homeTeam}>
+                            {match.team1 || match.homeTeam}
+                          </option>
+                          <option value={match.team2 || match.awayTeam}>
+                            {match.team2 || match.awayTeam}
+                          </option>
+                          <option value={"TIED"}>TIED</option>
                         </select>
                         <button
                           onClick={async () => {
-                            const val = selectedFinals[match.id || ''];
+                            const val = selectedFinals[match.id || ""];
                             if (!val) return;
                             await handleFinalizeMatch(match, val);
                           }}
-                          disabled={String(match.status) === 'COMPLETED'}
-                        >Finalize
+                          disabled={String(match.status) === "COMPLETED"}
+                        >
+                          Finalize
                         </button>
                       </div>
                     ) : null}
@@ -442,24 +603,34 @@ export default function DashboardPage() {
                 ) : null}
 
                 <div style={{ marginTop: 12, opacity: 0.8, fontSize: 12 }}>
-                  {match.status !== 'COMPLETED' ? (
+                  {match.status !== "COMPLETED" ? (
                     <>
-                      <div style={{ color: 'green' }}>{`Voted: ${votedNames(match)}`}</div>
-                      <div style={{ color: 'orange' }}>{`Not Voted: ${notVotedNames(match)}`}</div>
+                      <div
+                        style={{ color: "green" }}
+                      >{`Voted: ${votedNames(match)}`}</div>
+                      <div
+                        style={{ color: "orange" }}
+                      >{`Not Voted: ${notVotedNames(match)}`}</div>
                     </>
                   ) : (
                     <>
-                      <div style={{ color: 'green' }}>
-                        Voted Right: {(match.votedRight || []).map((id: string) => {
-                          const u = allUsers.find(uu => uu.id === id);
-                          return u ? u.name : id;
-                        }).join(', ') || 'None'}
+                      <div style={{ color: "green" }}>
+                        Voted Right:{" "}
+                        {(match.votedRight || [])
+                          .map((id: string) => {
+                            const u = allUsers.find((uu) => uu.id === id);
+                            return u ? u.name : id;
+                          })
+                          .join(", ") || "None"}
                       </div>
-                      <div style={{ color: 'orange' }}>
-                        Voted Wrong: {(match.votedWrong || []).map((id: string) => {
-                          const u = allUsers.find(uu => uu.id === id);
-                          return u ? u.name : id;
-                        }).join(', ') || 'None'}
+                      <div style={{ color: "orange" }}>
+                        Voted Wrong:{" "}
+                        {(match.votedWrong || [])
+                          .map((id: string) => {
+                            const u = allUsers.find((uu) => uu.id === id);
+                            return u ? u.name : id;
+                          })
+                          .join(", ") || "None"}
                       </div>
                     </>
                   )}
@@ -470,40 +641,57 @@ export default function DashboardPage() {
         </div>
       </details>
 
-      <details style={{ marginBottom: '24px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px', background: 'var(--card-background)' }}>
-        <summary style={{ fontSize: '1.1rem', fontWeight: 700, cursor: 'pointer' }}>
+      <details
+        style={{
+          marginBottom: "24px",
+          border: "1px solid var(--border-color)",
+          borderRadius: "12px",
+          padding: "16px",
+          background: "var(--card-background)",
+        }}
+      >
+        <summary
+          style={{ fontSize: "1.1rem", fontWeight: 700, cursor: "pointer" }}
+        >
           Past Matches
         </summary>
-        <div style={{ marginTop: '16px', display: 'grid', gap: '16px' }}>
+        <div style={{ marginTop: "16px", display: "grid", gap: "16px" }}>
           {pastMatches.length === 0 ? (
             <p>No past matches are available yet.</p>
           ) : (
             pastMatches.map((match) => (
               <div
-                key={match.matchId || `${match.team1}_${match.team2}_${match.date}`}
+                key={
+                  match.matchId || `${match.team1}_${match.team2}_${match.date}`
+                }
                 style={{
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  background: 'white',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)'
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  background: "white",
+                  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.06)",
                 }}
               >
-                <h3 style={{ margin: '0 0 8px' }}>
-                  {renderTeamLabel(match.team1 || match.homeTeam)} vs {renderTeamLabel(match.team2 || match.awayTeam)}
+                <h3 style={{ margin: "0 0 8px" }}>
+                  {renderTeamLabel(match.team1 || match.homeTeam)} vs{" "}
+                  {renderTeamLabel(match.team2 || match.awayTeam)}
                 </h3>
-                <p style={{ margin: '0 0 6px' }}>
+                <p style={{ margin: "0 0 6px" }}>
                   <strong>Date:</strong> {formatMatchDateString(match.date)}
                 </p>
-                <p style={{ margin: '0 0 6px' }}>
-                  <strong>Location:</strong> {match.location || 'Unknown'}
+                <p style={{ margin: "0 0 6px" }}>
+                  <strong>Location:</strong> {match.location || "Unknown"}
                 </p>
                 <p style={{ margin: 0 }}>
-                  <strong>Winner:</strong> {match.winner || 'TBD'}
+                  <strong>Winner:</strong> {match.winner || "TBD"}
                 </p>
                 <div style={{ marginTop: 12, opacity: 0.8, fontSize: 12 }}>
-                  <div style={{ color: 'green' }}>{`Voted Right: ${votedRightNames(match)}`}</div>
-                  <div style={{ color: 'orange' }}>{`Voted Wrong: ${votedWrongNames(match)}`}</div>
+                  <div
+                    style={{ color: "green" }}
+                  >{`Voted Right: ${votedRightNames(match)}`}</div>
+                  <div
+                    style={{ color: "orange" }}
+                  >{`Voted Wrong: ${votedWrongNames(match)}`}</div>
                 </div>
               </div>
             ))

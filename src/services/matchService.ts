@@ -15,30 +15,12 @@ import {
 import { db } from '../firebase/firebase';
 import { Match } from '../models/Match';
 
-const convertFirestoreTimestamp = (value: any): string => {
-  if (!value) return new Date().toISOString();
-  
-  // Handle Firestore Timestamp objects
-  if (value instanceof Timestamp) {
-    return value.toDate().toISOString();
-  }
-  
-  // Handle Date objects
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  
-  // Handle ISO strings
-  if (typeof value === 'string') {
-    return value;
-  }
-  
-  // Handle numeric timestamps (milliseconds)
-  if (typeof value === 'number') {
-    return new Date(value).toISOString();
-  }
-  
-  return new Date().toISOString();
+// Return the raw Firestore timestamp/value unchanged.
+// We previously converted timestamps to ISO strings here, but that caused
+// timezone/identity issues when rendering and filtering. Keep the original
+// value so callers can decide how to parse/format it.
+const convertFirestoreTimestamp = (value: any): any => {
+  return value;
 };
 
 // Demo data fallback for when Firebase is unavailable
@@ -122,7 +104,15 @@ export const getUpcomingMatches = async (): Promise<Match[]> => {
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
-      return [];
+      console.warn('No upcoming matches found in Firestore, using demo data for upcoming matches');
+      const nowMs = now.getTime();
+      return demoDemoMatches.filter(m => {
+        try {
+          return new Date(m.date).getTime() > nowMs;
+        } catch {
+          return false;
+        }
+      });
     }
 
     return snapshot.docs.map((doc) => {
@@ -150,7 +140,15 @@ export const getUpcomingMatches = async (): Promise<Match[]> => {
     });
   } catch (error) {
     console.error('Error fetching upcoming matches from Firestore:', error);
-    return [];
+    console.warn('Returning demo upcoming matches due to error');
+    const nowMs = new Date().getTime();
+    return demoDemoMatches.filter(m => {
+      try {
+        return new Date(m.date).getTime() > nowMs;
+      } catch {
+        return false;
+      }
+    });
   }
 };
 
