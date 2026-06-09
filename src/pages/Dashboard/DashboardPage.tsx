@@ -6,7 +6,7 @@ import {
   submitPrediction,
   finalizeMatch,
 } from "../../services/matchService";
-import { getAllUsers } from "../../services/userService";
+import { getAllUsers, getCurrentUser, setCurrentUser } from "../../services/userService";
 import { getLeaderboard } from "../../services/leaderboardService";
 import LeaderboardTable from "../../components/LeaderboardTable/LeaderboardTable";
 import { Leaderboard } from "../../models/Leaderboard";
@@ -18,6 +18,8 @@ const yesterdayDate = new Date(todayDate);
 yesterdayDate.setDate(todayDate.getDate() - 1);
 const tomorrowDate = new Date(todayDate);
 tomorrowDate.setDate(todayDate.getDate() + 1);
+const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+const oneHourMs = 60 * 60 * 1000;
 
 const formatMatchDateString = (value: string) => {
   const date = new Date(value);
@@ -101,6 +103,14 @@ export default function DashboardPage() {
   const loadUsers = async () => {
     const data = await getAllUsers();
     setAllUsers(data as any[]);
+
+    const current = getCurrentUser();
+    if (current?.id) {
+      const refreshed = (data as any[]).find((u) => u.id === current.id);
+      if (refreshed) {
+        setCurrentUser(refreshed);
+      }
+    }
   };
 
   const todayLabel = useMemo(() => {
@@ -168,6 +178,31 @@ export default function DashboardPage() {
     );
   };
 
+  // Lock predictions one hour before kickoff for today's matches
+  const isLockedForPrediction = (match: Match) => {
+    const date = parseMatchDate(match.date);
+    if (!date) return true; // unknown date => lock by default
+    const now = new Date();
+    const diffMs = date.getTime() - now.getTime();
+    // locked when match starts within the next hour but hasn't started yet
+    return diffMs <= oneHourMs && diffMs > 0;
+  };
+
+  const isWithinSubmissionWindow = (match: Match) => {
+    const date = parseMatchDate(match.date);
+    if (!date) return false;
+
+    const now = new Date();
+    const diffMs = date.getTime() - now.getTime();
+    return diffMs > oneHourMs && diffMs <= oneWeekMs;
+  };
+
+  const canUserPredictMatch = (match: Match) => {
+    if (!user || user.role !== "USER") return false;
+    if (match.status === "COMPLETED") return false;
+    return isWithinSubmissionWindow(match) && !isLockedForPrediction(match);
+  };
+
   const votedNames = (match: Match) => {
     return (
       (match.predictions || [])
@@ -219,6 +254,21 @@ export default function DashboardPage() {
     );
   };
 
+  const notPlayedNames = (match: Match) => {
+    return (
+      allUsers
+        .filter(
+          (u) =>
+            u.role !== "ADMIN" &&
+            !(match.predictions || []).some(
+              (p: any) => (p.userId || p.user) === u.id,
+            ),
+        )
+        .map((u) => u.name)
+        .join(", ") || "None"
+    );
+  };
+
   const renderTeamLabel = (team?: string) => {
     const name = team || "TBD";
     const icon = getNationIcon(name);
@@ -244,8 +294,54 @@ export default function DashboardPage() {
     );
   };
 
+  const renderAdminResultControls = (
+    match: Match,
+    actionLabel: string,
+  ) => {
+    if (user?.role !== "ADMIN") return null;
+    const selectedResult = selectedFinals[match.id || ""] || match.winner || "";
+
+    return (
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <select
+          value={selectedResult}
+          onChange={(e) =>
+            setSelectedFinals((prev) => ({
+              ...prev,
+              [match.id || ""]: e.target.value,
+            }))
+          }
+        >
+          <option value="">Select result</option>
+          <option value={match.team1 || match.homeTeam}>
+            {match.team1 || match.homeTeam}
+          </option>
+          <option value={match.team2 || match.awayTeam}>
+            {match.team2 || match.awayTeam}
+          </option>
+          <option value={"TIED"}>TIED</option>
+        </select>
+        <button
+          onClick={async () => {
+            const val = selectedFinals[match.id || ""] || match.winner || "";
+            if (!val) return;
+            await handleFinalizeMatch(match, val);
+          }}
+          disabled={!selectedResult}
+        >
+          {actionLabel}
+        </button>
+      </div>
+    );
+  };
+
   const todayMatches = matches.filter(isMatchToday);
-  console.log("Today matches:", todayMatches);
 
   const pastMatches = matches.filter((match) => {
     const date = parseMatchDate(match.date);
@@ -255,7 +351,9 @@ export default function DashboardPage() {
   const upcomingMatches = matches
     .filter((match) => {
       const date = parseMatchDate(match.date);
-      return date ? normalizeDate(date) > todayStart : false;
+      if (!date) return false;
+      const diffMs = date.getTime() - new Date().getTime();
+      return diffMs > 0 && diffMs <= oneWeekMs;
     })
     .sort((a, b) => {
       const da = parseMatchDate(a.date);
@@ -266,7 +364,12 @@ export default function DashboardPage() {
 
   const displayedUpcoming = (
     upcomingFromService.length > 0 ? upcomingFromService : upcomingMatches
-  ).filter((match) => !isMatchToday(match));
+  ).filter((match) => {
+    const date = parseMatchDate(match.date);
+    if (!date) return false;
+    const diffMs = date.getTime() - new Date().getTime();
+    return diffMs > 0 && diffMs <= oneWeekMs && !isMatchToday(match);
+  });
 
   const handleSubmitPrediction = async (match: Match, selected: string) => {
     if (!match.id || !user) return;
@@ -293,6 +396,10 @@ export default function DashboardPage() {
     if (!match.id) return;
     const ok = await finalizeMatch(match.id, selectedWinner);
     if (ok) {
+      setSelectedFinals((prev) => ({
+        ...prev,
+        [match.id || ""]: selectedWinner,
+      }));
       // reload matches/users/leaderboard
       await loadMatches();
       await loadUsers();
@@ -355,7 +462,7 @@ export default function DashboardPage() {
                   <strong>Status:</strong> {match.status}
                 </p>
                 {/* Prediction UI */}
-                {user && match.status !== "COMPLETED" ? (
+                {user ? (
                   <div style={{ marginTop: 12 }}>
                     {user.role === "USER" ? (
                       <div
@@ -373,7 +480,14 @@ export default function DashboardPage() {
                               [match.id || ""]: e.target.value,
                             }))
                           }
-                          disabled={!isMatchToday(match)}
+                          disabled={!canUserPredictMatch(match)}
+                          title={
+                            !isWithinSubmissionWindow(match)
+                              ? "Predictions open only during the 7 days before kickoff"
+                              : isLockedForPrediction(match)
+                                ? "Predictions locked within 1 hour of kickoff"
+                                : undefined
+                          }
                         >
                           <option value="">Select winner</option>
                           <option value={match.team1 || match.homeTeam}>
@@ -392,53 +506,28 @@ export default function DashboardPage() {
                           disabled={
                             !!(
                               match.predictions &&
-                              match.predictions.find(
-                                (p) => p.userId === user.id,
-                              )
-                            ) || !isMatchToday(match)
+                              match.predictions.find((p) => p.userId === user.id)
+                            ) || !canUserPredictMatch(match)
+                          }
+                          title={
+                            !isWithinSubmissionWindow(match)
+                              ? "Predictions open only during the 7 days before kickoff"
+                              : isLockedForPrediction(match)
+                                ? "Predictions locked within 1 hour of kickoff"
+                                : undefined
                           }
                         >
                           Submit
                         </button>
                       </div>
-                    ) : user.role === "ADMIN" ? (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          alignItems: "center",
-                        }}
-                      >
-                        <select
-                          value={selectedFinals[match.id || ""] || ""}
-                          onChange={(e) =>
-                            setSelectedFinals((prev) => ({
-                              ...prev,
-                              [match.id || ""]: e.target.value,
-                            }))
-                          }
-                        >
-                          <option value="">Select result</option>
-                          <option value={match.team1 || match.homeTeam}>
-                            {match.team1 || match.homeTeam}
-                          </option>
-                          <option value={match.team2 || match.awayTeam}>
-                            {match.team2 || match.awayTeam}
-                          </option>
-                          <option value={"TIED"}>TIED</option>
-                        </select>
-                        <button
-                          onClick={async () => {
-                            const val = selectedFinals[match.id || ""];
-                            if (!val) return;
-                            await handleFinalizeMatch(match, val);
-                          }}
-                          disabled={String(match.status) === "COMPLETED"}
-                        >
-                          Finalize
-                        </button>
-                      </div>
-                    ) : null}
+                    ) : (
+                      renderAdminResultControls(
+                        match,
+                        match.status === "COMPLETED"
+                          ? "Update Result"
+                          : "Finalize",
+                      )
+                    )}
                   </div>
                 ) : null}
 
@@ -515,7 +604,7 @@ export default function DashboardPage() {
                   <strong>Status:</strong> {match.status || "TBD"}
                 </p>
                 {/* Prediction UI for upcoming */}
-                {user && match.status !== "COMPLETED" ? (
+                {user ? (
                   <div style={{ marginTop: 12 }}>
                     {user.role === "USER" ? (
                       <div
@@ -533,7 +622,14 @@ export default function DashboardPage() {
                               [match.id || ""]: e.target.value,
                             }))
                           }
-                          disabled={!isMatchToday(match)}
+                          disabled={!canUserPredictMatch(match)}
+                          title={
+                            !isWithinSubmissionWindow(match)
+                              ? "Predictions open only during the 7 days before kickoff"
+                              : isLockedForPrediction(match)
+                                ? "Predictions locked within 1 hour of kickoff"
+                                : undefined
+                          }
                         >
                           <option value="">Select winner</option>
                           <option value={match.team1 || match.homeTeam}>
@@ -555,50 +651,27 @@ export default function DashboardPage() {
                               match.predictions.find(
                                 (p) => p.userId === user.id,
                               )
-                            ) || !isMatchToday(match)
+                            ) || !canUserPredictMatch(match)
+                          }
+                          title={
+                            !isWithinSubmissionWindow(match)
+                              ? "Predictions open only during the 7 days before kickoff"
+                              : isLockedForPrediction(match)
+                                ? "Predictions locked within 1 hour of kickoff"
+                                : undefined
                           }
                         >
                           Submit
                         </button>
                       </div>
-                    ) : user.role === "ADMIN" ? (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          alignItems: "center",
-                        }}
-                      >
-                        <select
-                          value={selectedFinals[match.id || ""] || ""}
-                          onChange={(e) =>
-                            setSelectedFinals((prev) => ({
-                              ...prev,
-                              [match.id || ""]: e.target.value,
-                            }))
-                          }
-                        >
-                          <option value="">Select result</option>
-                          <option value={match.team1 || match.homeTeam}>
-                            {match.team1 || match.homeTeam}
-                          </option>
-                          <option value={match.team2 || match.awayTeam}>
-                            {match.team2 || match.awayTeam}
-                          </option>
-                          <option value={"TIED"}>TIED</option>
-                        </select>
-                        <button
-                          onClick={async () => {
-                            const val = selectedFinals[match.id || ""];
-                            if (!val) return;
-                            await handleFinalizeMatch(match, val);
-                          }}
-                          disabled={String(match.status) === "COMPLETED"}
-                        >
-                          Finalize
-                        </button>
-                      </div>
-                    ) : null}
+                    ) : (
+                      renderAdminResultControls(
+                        match,
+                        match.status === "COMPLETED"
+                          ? "Update Result"
+                          : "Finalize",
+                      )
+                    )}
                   </div>
                 ) : null}
 
@@ -683,15 +756,22 @@ export default function DashboardPage() {
                   <strong>Location:</strong> {match.location || "Unknown"}
                 </p>
                 <p style={{ margin: 0 }}>
-                  <strong>Winner:</strong> {match.winner || "TBD"}
+                  <strong>Winner:</strong>{" "}
+                  <span style={{ color: "green", fontWeight: 700 }}>
+                    {match.winner || "TBD"}
+                  </span>
                 </p>
+                {renderAdminResultControls(match, "Update Result")}
                 <div style={{ marginTop: 12, opacity: 0.8, fontSize: 12 }}>
                   <div
                     style={{ color: "green" }}
-                  >{`Voted Right: ${votedRightNames(match)}`}</div>
+                  >{`Winner(s): ${votedRightNames(match)}`}</div>
                   <div
                     style={{ color: "orange" }}
-                  >{`Voted Wrong: ${votedWrongNames(match)}`}</div>
+                  >{`Loser(s): ${votedWrongNames(match)}`}</div>
+                  <div
+                    style={{ color: "#6b7280" }}
+                  >{`Not Played: ${notPlayedNames(match)}`}</div>
                 </div>
               </div>
             ))

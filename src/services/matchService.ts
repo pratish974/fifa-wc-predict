@@ -14,6 +14,7 @@ import {
 
 import { db } from '../firebase/firebase';
 import { Match } from '../models/Match';
+import { getAllUsers } from './userService';
 
 // Return the raw Firestore timestamp/value unchanged.
 // We previously converted timestamps to ISO strings here, but that caused
@@ -22,6 +23,160 @@ import { Match } from '../models/Match';
 const convertFirestoreTimestamp = (value: any): any => {
   return value;
 };
+
+const normalizeAnswer = (value: unknown): string =>
+  String(value ?? '').trim().toLowerCase();
+
+const isTieResult = (value: unknown): boolean => {
+  const normalized = normalizeAnswer(value);
+  return normalized === 'tied' || normalized === 'tie' || normalized === 'draw';
+};
+
+const parseMatchDate = (value: unknown): Date | null => {
+  if (!value) return null;
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === 'object') {
+    const v: any = value;
+
+    if (typeof v.toDate === 'function') {
+      try {
+        const date = v.toDate();
+        return isNaN(date.getTime()) ? null : date;
+      } catch {
+        return null;
+      }
+    }
+
+    if (typeof v.seconds === 'number') {
+      const ms =
+        v.seconds * 1000 +
+        (typeof v.nanoseconds === 'number' ? Math.floor(v.nanoseconds / 1e6) : 0);
+      const date = new Date(ms);
+      return isNaN(date.getTime()) ? null : date;
+    }
+  }
+
+  return null;
+};
+
+const getMatchDateFromData = (data: any): Date | null => {
+  return (
+    parseMatchDate(data?.date) ||
+    parseMatchDate(data?.kickoff?.ist?.date) ||
+    parseMatchDate(data?.kickoff?.date) ||
+    parseMatchDate(data?.matchDate) ||
+    null
+  );
+};
+
+const isSubmissionWindowOpen = (matchDate: Date | null): boolean => {
+  if (!matchDate) return false;
+
+  const now = new Date();
+  const diffMs = matchDate.getTime() - now.getTime();
+  const weekMs = 7 * 24 * 60 * 60 * 1000;
+  const hourMs = 60 * 60 * 1000;
+
+  return diffMs <= weekMs && diffMs > hourMs;
+};
+
+type MatchOutcomeStats = {
+  points: number;
+  playedMatches: number;
+  wonMatches: number;
+  lostMatches: number;
+  tiedMatches: number;
+  notPlayedMatches: number;
+};
+
+const emptyMatchOutcomeStats = (): MatchOutcomeStats => ({
+  points: 0,
+  playedMatches: 0,
+  wonMatches: 0,
+  lostMatches: 0,
+  tiedMatches: 0,
+  notPlayedMatches: 0,
+});
+
+const getMatchOutcomeStats = (
+  prediction: unknown,
+  winner: unknown,
+  participated: boolean,
+): MatchOutcomeStats => {
+  if (!winner) return emptyMatchOutcomeStats();
+
+  if (!participated) {
+    return {
+      points: -10,
+      playedMatches: 0,
+      wonMatches: 0,
+      lostMatches: 0,
+      tiedMatches: 0,
+      notPlayedMatches: 1,
+    };
+  }
+
+  const normalizedPrediction = normalizeAnswer(prediction);
+  const normalizedWinner = normalizeAnswer(winner);
+
+  if (!normalizedWinner) return emptyMatchOutcomeStats();
+
+  if (isTieResult(normalizedWinner)) {
+    if (isTieResult(normalizedPrediction)) {
+      return {
+        points: 10,
+        playedMatches: 1,
+        wonMatches: 0,
+        lostMatches: 0,
+        tiedMatches: 1,
+        notPlayedMatches: 0,
+      };
+    }
+
+    return {
+      points: -10,
+      playedMatches: 1,
+      wonMatches: 0,
+      lostMatches: 1,
+      tiedMatches: 0,
+      notPlayedMatches: 0,
+    };
+  }
+
+  if (normalizedPrediction === normalizedWinner) {
+    return {
+      points: 10,
+      playedMatches: 1,
+      wonMatches: 1,
+      lostMatches: 0,
+      tiedMatches: 0,
+      notPlayedMatches: 0,
+    };
+  }
+
+  return {
+    points: -10,
+    playedMatches: 1,
+    wonMatches: 0,
+    lostMatches: 1,
+    tiedMatches: 0,
+    notPlayedMatches: 0,
+  };
+};
+
+const getStatDelta = (next: MatchOutcomeStats, prev: MatchOutcomeStats) => ({
+  points: next.points - prev.points,
+  playedMatches: next.playedMatches - prev.playedMatches,
+  wonMatches: next.wonMatches - prev.wonMatches,
+  lostMatches: next.lostMatches - prev.lostMatches,
+  tiedMatches: next.tiedMatches - prev.tiedMatches,
+  notPlayedMatches: next.notPlayedMatches - prev.notPlayedMatches,
+});
 
 // Demo data fallback for when Firebase is unavailable
 const demoDemoMatches: Match[] = [
@@ -173,6 +328,11 @@ export const submitPrediction = async (
     if (!snap.exists()) return false;
 
     const data = snap.data() as any;
+    const matchDate = getMatchDateFromData(data);
+    if (!isSubmissionWindowOpen(matchDate)) {
+      return false;
+    }
+
     const preds = Array.isArray(data.predictions) ? data.predictions : [];
 
     // prevent duplicate prediction by same user
@@ -202,55 +362,82 @@ export const finalizeMatch = async (matchDocId: string, winner: string): Promise
     if (!snap.exists()) return false;
 
     const data = snap.data() as any;
-    if (data.status === 'COMPLETED') return false;
-
     const preds = Array.isArray(data.predictions) ? data.predictions : [];
+    const previousWinner = data.winner ?? null;
+    const users = (await getAllUsers()).filter((u) => (u.role || 'USER').toUpperCase() !== 'ADMIN');
 
     const batch = writeBatch(db);
     const votedRight: string[] = [];
     const votedWrong: string[] = [];
-    const userDeltas = new Map<string, number>();
+    const userDeltas = new Map<
+      string,
+      {
+        points: number;
+        playedMatches: number;
+        wonMatches: number;
+        lostMatches: number;
+        tiedMatches: number;
+        notPlayedMatches: number;
+      }
+    >();
 
-    const normalizeAnswer = (value: unknown) =>
-      String(value || '').toString().trim().toLowerCase();
-
-    const normalizedWinner = normalizeAnswer(winner);
-    const isTieWinner = normalizedWinner === 'tied' || normalizedWinner === 'tie' || normalizedWinner === 'draw';
-
+    const predictionsByUser = new Map<string, any>();
     for (const p of preds) {
       const uid = p.userId || p.user || p.userName || (p.user && p.user.id);
       if (!uid) continue;
+      predictionsByUser.set(uid, p);
+    }
 
-      const prediction = normalizeAnswer(p.prediction);
-      let delta = 0;
+    for (const user of users) {
+      if (!user.id) continue;
 
-      if (isTieWinner) {
-        if (prediction === 'tied' || prediction === 'tie' || prediction === 'draw') {
-          delta = 0;
-          votedRight.push(uid);
+      const prediction = predictionsByUser.get(user.id)?.prediction;
+      const nextStats = getMatchOutcomeStats(prediction, winner, predictionsByUser.has(user.id));
+      const prevStats = getMatchOutcomeStats(
+        prediction,
+        previousWinner,
+        predictionsByUser.has(user.id),
+      );
+      const delta = getStatDelta(nextStats, prevStats);
+
+      if (predictionsByUser.has(user.id)) {
+        if (isTieResult(winner)) {
+          if (isTieResult(prediction)) {
+            votedRight.push(user.id);
+          } else {
+            votedWrong.push(user.id);
+          }
+        } else if (normalizeAnswer(prediction) === normalizeAnswer(winner)) {
+          votedRight.push(user.id);
         } else {
-          delta = -10;
-          votedWrong.push(uid);
-        }
-      } else {
-        if (prediction === normalizedWinner) {
-          delta = 10;
-          votedRight.push(uid);
-        } else {
-          delta = -10;
-          votedWrong.push(uid);
+          votedWrong.push(user.id);
         }
       }
 
-      userDeltas.set(uid, (userDeltas.get(uid) || 0) + delta);
+      if (
+        delta.points !== 0 ||
+        delta.playedMatches !== 0 ||
+        delta.wonMatches !== 0 ||
+        delta.lostMatches !== 0 ||
+        delta.tiedMatches !== 0 ||
+        delta.notPlayedMatches !== 0
+      ) {
+        userDeltas.set(user.id, delta);
+      }
     }
 
     for (const [uid, delta] of userDeltas.entries()) {
-      if (delta === 0) continue;
       const userRef = doc(db, 'users', uid);
       const userSnap = await getDoc(userRef);
       if (!userSnap.exists()) continue;
-      batch.update(userRef, { points: increment(delta) });
+      batch.update(userRef, {
+        points: increment(delta.points),
+        playedMatches: increment(delta.playedMatches),
+        wonMatches: increment(delta.wonMatches),
+        lostMatches: increment(delta.lostMatches),
+        tiedMatches: increment(delta.tiedMatches),
+        notPlayedMatches: increment(delta.notPlayedMatches)
+      });
     }
 
     batch.update(ref, {
