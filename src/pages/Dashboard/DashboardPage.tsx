@@ -6,7 +6,11 @@ import {
   submitPrediction,
   finalizeMatch,
 } from "../../services/matchService";
-import { getAllUsers, getCurrentUser, setCurrentUser } from "../../services/userService";
+import {
+  getAllUsers,
+  getCurrentUser,
+  setCurrentUser,
+} from "../../services/userService";
 import { getLeaderboard } from "../../services/leaderboardService";
 import LeaderboardTable from "../../components/LeaderboardTable/LeaderboardTable";
 import { Leaderboard } from "../../models/Leaderboard";
@@ -211,7 +215,9 @@ export default function DashboardPage() {
     const withinOneHour = diffMs > 0 && diffMs <= oneHourMs;
     const alreadyStarted = now.getTime() >= date.getTime();
     const startedButVisible =
-      isMatchToday(match) && now.getTime() >= date.getTime() && now.getTime() < date.getTime() + fourHoursMs;
+      isMatchToday(match) &&
+      now.getTime() >= date.getTime() &&
+      now.getTime() < date.getTime() + fourHoursMs;
 
     if (startedButVisible) {
       return {
@@ -343,10 +349,7 @@ export default function DashboardPage() {
     );
   };
 
-  const renderAdminResultControls = (
-    match: Match,
-    actionLabel: string,
-  ) => {
+  const renderAdminResultControls = (match: Match, actionLabel: string) => {
     if (user?.role !== "ADMIN") return null;
     const selectedResult = selectedFinals[match.id || ""] || match.winner || "";
 

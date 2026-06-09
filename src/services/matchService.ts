@@ -206,9 +206,9 @@ const demoDemoMatches: Match[] = [
 
 export const getMatches = async (): Promise<Match[]> => {
   try {
-    const q = query(collection(db, 'matches'), 
-    // orderBy('date', 'desc')
-  );
+    const q = query(collection(db, 'matches'),
+      // orderBy('date', 'desc')
+    );
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
@@ -218,7 +218,7 @@ export const getMatches = async (): Promise<Match[]> => {
 
     return snapshot.docs.map((doc) => {
       const data = doc.data() as any;
-     
+
 
       const match: Match = {
         id: doc.id,
