@@ -8,9 +8,16 @@ const useCurrentUser = () => {
 
   useEffect(() => {
     // `getCurrentUser` is synchronous and returns `User | null`.
-    const data = getCurrentUser();
-    setUser(data);
-    setLoading(false);
+    const syncUser = () => {
+      const data = getCurrentUser();
+      setUser(data);
+      setLoading(false);
+    };
+
+    syncUser();
+
+    window.addEventListener('currentUserUpdated', syncUser);
+    return () => window.removeEventListener('currentUserUpdated', syncUser);
   }, []);
 
   return { user, loading };

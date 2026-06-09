@@ -1,5 +1,6 @@
 .leaderboard-table {
   width: 100%;
+  min-width: 820px;
   border-collapse: collapse;
   background: var(--card-background);
   border: 1px solid var(--border-color);

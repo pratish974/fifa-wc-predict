@@ -12,6 +12,9 @@ export const getCurrentUser = (): User | null => {
 
 export const setCurrentUser = (user: User) => {
   localStorage.setItem('currentUser', JSON.stringify(user));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('currentUserUpdated'));
+  }
 };
 
 export const fetchUserById = async (id: string): Promise<User | null> => {
@@ -27,7 +30,12 @@ export const fetchUserById = async (id: string): Promise<User | null> => {
       id: snap.id,
       name: data.name || snap.id,
       role: data.role || 'USER',
-      points: typeof data.points === 'number' ? data.points : 0
+      points: typeof data.points === 'number' ? data.points : 0,
+      playedMatches: typeof data.playedMatches === 'number' ? data.playedMatches : 0,
+      wonMatches: typeof data.wonMatches === 'number' ? data.wonMatches : 0,
+      lostMatches: typeof data.lostMatches === 'number' ? data.lostMatches : 0,
+      tiedMatches: typeof data.tiedMatches === 'number' ? data.tiedMatches : 0,
+      notPlayedMatches: typeof data.notPlayedMatches === 'number' ? data.notPlayedMatches : 0
     };
 
     return user;
@@ -49,7 +57,12 @@ export const getAllUsers = async (): Promise<User[]> => {
         id: d.id,
         name: data.name || d.id,
         role: data.role || 'USER',
-        points: typeof data.points === 'number' ? data.points : 0
+        points: typeof data.points === 'number' ? data.points : 0,
+        playedMatches: typeof data.playedMatches === 'number' ? data.playedMatches : 0,
+        wonMatches: typeof data.wonMatches === 'number' ? data.wonMatches : 0,
+        lostMatches: typeof data.lostMatches === 'number' ? data.lostMatches : 0,
+        tiedMatches: typeof data.tiedMatches === 'number' ? data.tiedMatches : 0,
+        notPlayedMatches: typeof data.notPlayedMatches === 'number' ? data.notPlayedMatches : 0
       } as User;
     });
   } catch (err) {
