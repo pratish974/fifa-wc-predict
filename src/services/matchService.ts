@@ -14,6 +14,7 @@ import {
 
 import { db } from '../firebase/firebase';
 import { Match } from '../models/Match';
+import { parseMatchDate } from '../utils/dateUtils';
 import { getAllUsers } from './userService';
 
 // Return the raw Firestore timestamp/value unchanged.
@@ -32,43 +33,11 @@ const isTieResult = (value: unknown): boolean => {
   return normalized === 'tied' || normalized === 'tie' || normalized === 'draw';
 };
 
-const parseMatchDate = (value: unknown): Date | null => {
-  if (!value) return null;
-
-  if (typeof value === 'string' || typeof value === 'number') {
-    const date = new Date(value);
-    return isNaN(date.getTime()) ? null : date;
-  }
-
-  if (typeof value === 'object') {
-    const v: any = value;
-
-    if (typeof v.toDate === 'function') {
-      try {
-        const date = v.toDate();
-        return isNaN(date.getTime()) ? null : date;
-      } catch {
-        return null;
-      }
-    }
-
-    if (typeof v.seconds === 'number') {
-      const ms =
-        v.seconds * 1000 +
-        (typeof v.nanoseconds === 'number' ? Math.floor(v.nanoseconds / 1e6) : 0);
-      const date = new Date(ms);
-      return isNaN(date.getTime()) ? null : date;
-    }
-  }
-
-  return null;
-};
-
 const getMatchDateFromData = (data: any): Date | null => {
   return (
+    parseMatchDate(data?.kickoff?.ist) ||
+    parseMatchDate(data?.kickoff) ||
     parseMatchDate(data?.date) ||
-    parseMatchDate(data?.kickoff?.ist?.date) ||
-    parseMatchDate(data?.kickoff?.date) ||
     parseMatchDate(data?.matchDate) ||
     null
   );
@@ -228,6 +197,7 @@ export const getMatches = async (): Promise<Match[]> => {
         team1: data.home_team || data.team1,
         team2: data.away_team || data.team2,
         date: convertFirestoreTimestamp(data?.kickoff?.ist?.date),
+        kickoff: data.kickoff,
         location: data.location || data.venue || '',
         status: data.status || 'OPEN',
         winner: data.winner || null,
@@ -281,6 +251,7 @@ export const getUpcomingMatches = async (): Promise<Match[]> => {
         team1: data.team1,
         team2: data.team2,
         date: convertFirestoreTimestamp(data.date),
+        kickoff: data.kickoff,
         location: data.location || data.venue || '',
         status: data.status || 'OPEN',
         winner: data.winner || null,

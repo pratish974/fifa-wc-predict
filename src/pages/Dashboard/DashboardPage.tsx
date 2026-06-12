@@ -16,6 +16,20 @@ import LeaderboardTable from "../../components/LeaderboardTable/LeaderboardTable
 import { Leaderboard } from "../../models/Leaderboard";
 import { Match } from "../../models/Match";
 import { getNationIcon } from "../../constants/nationsIcons";
+import { formatMatchDate, parseMatchDate } from "../../utils/dateUtils";
+
+type ApproxLocation = {
+  ip?: string;
+  city?: string;
+  region?: string;
+  country?: string;
+  country_name?: string;
+  latitude?: number;
+  longitude?: number;
+  timezone?: string;
+  org?: string;
+  postal?: string;
+};
 
 const todayDate = new Date();
 const yesterdayDate = new Date(todayDate);
@@ -25,11 +39,6 @@ tomorrowDate.setDate(todayDate.getDate() + 1);
 const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
 const oneHourMs = 60 * 60 * 1000;
 const fourHoursMs = 4 * 60 * 60 * 1000;
-
-const formatMatchDateString = (value: string) => {
-  const date = new Date(value);
-  return isNaN(date.getTime()) ? value : date.toLocaleString();
-};
 
 const demoMatches: Match[] = [
   {
@@ -81,6 +90,10 @@ export default function DashboardPage() {
     {},
   );
   const [leaderboard, setLeaderboard] = useState<Leaderboard[]>([]);
+  const [visitorLocation, setVisitorLocation] = useState<ApproxLocation | null>(
+    null,
+  );
+  const [visitorLocationError, setVisitorLocationError] = useState("");
   const { user } = useCurrentUser();
 
   useEffect(() => {
@@ -88,6 +101,7 @@ export default function DashboardPage() {
     loadUpcomingMatches();
     loadLeaderboard();
     loadUsers();
+    loadVisitorLocation();
   }, []);
 
   const loadMatches = async () => {
@@ -118,6 +132,39 @@ export default function DashboardPage() {
     }
   };
 
+  const loadVisitorLocation = async () => {
+    try {
+      const response = await fetch("https://ipapi.co/json/", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Location lookup failed with ${response.status}`);
+      }
+
+      const data = (await response.json()) as ApproxLocation;
+      setVisitorLocation(data);
+      setVisitorLocationError("");
+      console.log("Approx visitor location from IP lookup:", data);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to look up IP-based location";
+      setVisitorLocationError(message);
+      console.error("Approx visitor location lookup failed:", error);
+    }
+  };
+
+  const formatApproxLocation = (location: ApproxLocation | null) => {
+    if (!location) return "";
+    const place = [location.city, location.region || location.country_name || location.country]
+      .filter(Boolean)
+      .join(", ");
+    const ipPart = location.ip ? `IP ${location.ip}` : "";
+    return [place, ipPart].filter(Boolean).join(" | ");
+  };
+
   const todayLabel = useMemo(() => {
     return new Date().toLocaleDateString(undefined, {
       weekday: "long",
@@ -132,39 +179,7 @@ export default function DashboardPage() {
     return value.getTime();
   }, []);
 
-  const parseMatchDate = (value: unknown): Date | null => {
-    if (!value) return null;
-    if (typeof value === "string" || typeof value === "number") {
-      const date = new Date(value);
-      return isNaN(date.getTime()) ? null : date;
-    }
-
-    if (typeof value === "object" && value !== null) {
-      const v: any = value;
-      // Firestore Timestamp instance
-      if (typeof v.toDate === "function") {
-        try {
-          const date = v.toDate();
-          return isNaN(date.getTime()) ? null : date;
-        } catch {
-          return null;
-        }
-      }
-
-      // Plain object with seconds/nanoseconds (e.g. serialized timestamp)
-      if (typeof v.seconds === "number") {
-        const ms =
-          v.seconds * 1000 +
-          (typeof v.nanoseconds === "number"
-            ? Math.floor(v.nanoseconds / 1e6)
-            : 0);
-        const date = new Date(ms);
-        return isNaN(date.getTime()) ? null : date;
-      }
-    }
-
-    return null;
-  };
+  const getMatchDateValue = (match: Match) => match.kickoff?.ist || match.kickoff || match.date;
 
   const normalizeDate = (date: Date) => {
     const normalized = new Date(date);
@@ -173,7 +188,7 @@ export default function DashboardPage() {
   };
 
   const isMatchToday = (match: Match) => {
-    const date = parseMatchDate(match.date);
+    const date = parseMatchDate(getMatchDateValue(match));
     if (!date) return false;
     const today = new Date();
     return (
@@ -184,14 +199,14 @@ export default function DashboardPage() {
   };
 
   const isMatchInTodayTab = (match: Match) => {
-    const date = parseMatchDate(match.date);
+    const date = parseMatchDate(getMatchDateValue(match));
     if (!date || !isMatchToday(match)) return false;
     const now = new Date();
     return now.getTime() < date.getTime() + fourHoursMs;
   };
 
   const isMatchInPastTab = (match: Match) => {
-    const date = parseMatchDate(match.date);
+    const date = parseMatchDate(getMatchDateValue(match));
     if (!date) return false;
 
     const now = new Date();
@@ -200,7 +215,7 @@ export default function DashboardPage() {
   };
 
   const getPredictionState = (match: Match) => {
-    const date = parseMatchDate(match.date);
+    const date = parseMatchDate(getMatchDateValue(match));
     if (!date) {
       return {
         disabled: true,
@@ -451,14 +466,14 @@ export default function DashboardPage() {
 
   const upcomingMatches = matches
     .filter((match) => {
-      const date = parseMatchDate(match.date);
+      const date = parseMatchDate(getMatchDateValue(match));
       if (!date) return false;
       const diffMs = date.getTime() - new Date().getTime();
       return diffMs > 0 && diffMs <= oneWeekMs;
     })
     .sort((a, b) => {
-      const da = parseMatchDate(a.date);
-      const db = parseMatchDate(b.date);
+      const da = parseMatchDate(getMatchDateValue(a));
+      const db = parseMatchDate(getMatchDateValue(b));
       if (!da || !db) return 0;
       return da.getTime() - db.getTime();
     });
@@ -466,7 +481,7 @@ export default function DashboardPage() {
   const displayedUpcoming = (
     upcomingFromService.length > 0 ? upcomingFromService : upcomingMatches
   ).filter((match) => {
-    const date = parseMatchDate(match.date);
+    const date = parseMatchDate(getMatchDateValue(match));
     if (!date) return false;
     const diffMs = date.getTime() - new Date().getTime();
     return diffMs > 0 && diffMs <= oneWeekMs && !isMatchToday(match);
@@ -557,7 +572,7 @@ export default function DashboardPage() {
                   {renderTeamLabel(match.team2 || match.awayTeam)}
                 </h3>
                 <p style={{ margin: "0 0 6px" }}>
-                  <strong>Date:</strong> {formatMatchDateString(match.date)}
+                  <strong>Kickoff:</strong> {formatMatchDate(match.kickoff?.ist || match.date)}
                 </p>
                 <p style={{ margin: 0 }}>
                   <strong>Status:</strong> {match.status}
@@ -640,7 +655,7 @@ export default function DashboardPage() {
                   {renderTeamLabel(match.team2 || match.awayTeam)}
                 </h3>
                 <p style={{ margin: "0 0 6px" }}>
-                  <strong>Date:</strong> {formatMatchDateString(match.date)}
+                  <strong>Kickoff:</strong> {formatMatchDate(match.kickoff?.ist || match.date)}
                 </p>
                 <p style={{ margin: "0 0 6px" }}>
                   <strong>Location:</strong> {match.location || "TBD"}
@@ -737,7 +752,7 @@ export default function DashboardPage() {
                   {renderTeamLabel(match.team2 || match.awayTeam)}
                 </h3>
                 <p style={{ margin: "0 0 6px" }}>
-                  <strong>Date:</strong> {formatMatchDateString(match.date)}
+                  <strong>Kickoff:</strong> {formatMatchDate(match.kickoff?.ist || match.date)}
                 </p>
                 <p style={{ margin: "0 0 6px" }}>
                   <strong>Location:</strong> {match.location || "Unknown"}
@@ -770,6 +785,18 @@ export default function DashboardPage() {
         <h2>Leaderboard</h2>
         <LeaderboardTable rows={leaderboard} />
       </section>
+
+      <footer
+        style={{
+          marginTop: "24px",
+          color: "#6b7280",
+          fontSize: "12px",
+        }}
+      >
+        {visitorLocation
+          ? `Location fetched: ${formatApproxLocation(visitorLocation) || "Approximate IP lookup complete"}`
+          : `Location fetch error: ${visitorLocationError || "Still looking up location"}`}
+      </footer>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Match } from '../../models/Match';
+import { formatMatchDate } from '../../utils/dateUtils';
 import './MatchCard.css';
 
 interface MatchCardProps {
@@ -15,7 +16,7 @@ const MatchCard: React.FC<MatchCardProps> = ({ match }) => {
         <span>{match.awayTeam}</span>
       </div>
       <div className="match-card__info">
-        <span>{match.date}</span>
+        <span>{formatMatchDate(match.kickoff?.ist || match.date)}</span>
         <span>{match.location}</span>
       </div>
     </article>
