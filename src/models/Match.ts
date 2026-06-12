@@ -16,6 +16,13 @@ export interface Match {
   group?: string;
 
   date: any;
+  kickoff?: {
+    ist?: {
+      date?: string;
+      time?: string;
+    };
+    [key: string]: any;
+  };
   location?: string;
   status?: 'OPEN' | 'COMPLETED';
 
