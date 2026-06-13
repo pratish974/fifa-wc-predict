@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getAllUsers, setCurrentUser } from "../../services/userService";
 import { User } from "../../models/User";
+import CryptoJS from 'crypto-js';
 
-const hardcodedAdminPassword = process.env.REACT_APP_PASSWORD;
+const hardcodedAdminPassword = "7e4c97f0668951f5334520b5cb38bd73";
 
 const namePattern = /^[a-zA-Z][a-zA-Z _-]{1,29}$/;
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(process.env.ADMIN_PASS?.toString() || "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -59,7 +60,7 @@ export default function LoginPage() {
       return;
     }
 
-    if (isAdmin && password !== hardcodedAdminPassword) {
+    if (isAdmin && getMd5Hash(password) !== hardcodedAdminPassword) {
       setError("Admin password is incorrect.");
       return;
     }
@@ -69,6 +70,12 @@ export default function LoginPage() {
     setLoading(false);
     navigate("/dashboard");
   };
+
+  
+
+function getMd5Hash(input: string): string {
+  return CryptoJS.MD5(input).toString();
+}
 
   return (
     <div>
