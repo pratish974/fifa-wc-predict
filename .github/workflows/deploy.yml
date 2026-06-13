@@ -38,6 +38,7 @@ jobs:
       - name: Build Project
         env:
           CI: false # 👈 Added to fix the exit code 1 build error
+          ADMIN_PASS: ${{ secrets.ADMIN_PASS }} # 👈 Example of how to use a secret in the build step
         run: npm run build
 
       - name: Setup Pages

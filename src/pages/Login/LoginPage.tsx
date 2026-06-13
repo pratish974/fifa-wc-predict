@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { getAllUsers, setCurrentUser } from "../../services/userService";
 import { User } from "../../models/User";
 
-const hardcodedAdminPassword = "1212j2";
+const hardcodedAdminPassword = process.env.REACT_APP_PASSWORD;
+
 const namePattern = /^[a-zA-Z][a-zA-Z _-]{1,29}$/;
 
 export default function LoginPage() {
