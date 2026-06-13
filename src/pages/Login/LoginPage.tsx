@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { getAllUsers, setCurrentUser } from "../../services/userService";
 import { User } from "../../models/User";
 
-const hardcodedAdminPassword = process.env.REACT_APP_PASSWORD;
+const hardcodedAdminPassword = process.env.ADMIN_PASS;
 
 const namePattern = /^[a-zA-Z][a-zA-Z _-]{1,29}$/;
 
