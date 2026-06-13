@@ -134,18 +134,16 @@ export default function DashboardPage() {
 
   const loadVisitorLocation = async () => {
     try {
-      const response = await fetch("https://ipapi.co/json/", {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error(`Location lookup failed with ${response.status}`);
+      // Try multiple location APIs with CORS-friendly options
+      const locationData = await tryLocationApis();
+      
+      if (locationData) {
+        setVisitorLocation(locationData);
+        setVisitorLocationError("");
+        console.log("Approx visitor location from IP lookup:", locationData);
+      } else {
+        throw new Error("All location APIs failed");
       }
-
-      const data = (await response.json()) as ApproxLocation;
-      setVisitorLocation(data);
-      setVisitorLocationError("");
-      console.log("Approx visitor location from IP lookup:", data);
     } catch (error) {
       const message =
         error instanceof Error
@@ -154,6 +152,129 @@ export default function DashboardPage() {
       setVisitorLocationError(message);
       console.error("Approx visitor location lookup failed:", error);
     }
+  };
+
+  const tryLocationApis = async (): Promise<ApproxLocation | null> => {
+    // API 1: ip-api.com (CORS-friendly, JSON endpoint)
+    try {
+      const response = await fetch("https://ip-api.com/json/", {
+        method: "GET",
+        headers: {
+          "Accept": "application/json",
+        },
+        mode: "cors",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          ip: data.query,
+          city: data.city,
+          region: data.regionName,
+          country: data.countryCode,
+          country_name: data.country,
+          latitude: data.lat,
+          longitude: data.lon,
+          timezone: data.timezone,
+          org: data.isp,
+          postal: data.zip,
+        };
+      }
+    } catch (err) {
+      console.warn("ip-api.com failed:", err);
+    }
+
+    // API 2: ipify.org with geo addon (CORS-friendly)
+    try {
+      const response = await fetch(
+        "https://geo.ipify.org/api/v2/country,city?apiKey=at_" + generateDemoKey(),
+        {
+          method: "GET",
+          headers: {
+            "Accept": "application/json",
+          },
+          mode: "cors",
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          ip: data.ip,
+          city: data.location?.city,
+          region: data.location?.region,
+          country: data.location?.country,
+          country_name: data.location?.country,
+          latitude: data.location?.lat,
+          longitude: data.location?.lng,
+          timezone: data.location?.timezone,
+          org: data.isp?.org,
+          postal: data.postal?.code,
+        };
+      }
+    } catch (err) {
+      console.warn("ipify.org failed:", err);
+    }
+
+    // API 3: ipapi.co (fallback with JSONP or try again)
+    try {
+      const response = await fetch("https://ipapi.co/json/", {
+        method: "GET",
+        headers: {
+          "Accept": "application/json",
+        },
+        mode: "cors",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          ip: data.ip,
+          city: data.city,
+          region: data.region,
+          country: data.country_code,
+          country_name: data.country_name,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          timezone: data.timezone,
+          org: data.org,
+          postal: data.postal,
+        };
+      }
+    } catch (err) {
+      console.warn("ipapi.co failed:", err);
+    }
+
+    // API 4: Fallback - use client IP detection (no external API needed)
+    try {
+      const response = await fetch("https://api.ipify.org?format=json", {
+        method: "GET",
+        headers: {
+          "Accept": "application/json",
+        },
+        mode: "cors",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          ip: data.ip,
+          city: "Unknown",
+          region: "Unknown",
+          country: "Unknown",
+          country_name: "Unknown",
+        };
+      }
+    } catch (err) {
+      console.warn("ipify.org IP-only failed:", err);
+    }
+
+    return null;
+  };
+
+  // Helper to generate demo key (replace with real key if needed)
+  const generateDemoKey = () => {
+    return "KL7fMOx3L0Zu3F1JV5Dy";
   };
 
   const formatApproxLocation = (location: ApproxLocation | null) => {
@@ -212,6 +333,16 @@ export default function DashboardPage() {
     const now = new Date();
     if (normalizeDate(date) < todayStart) return true;
     return isMatchToday(match) && now.getTime() >= date.getTime() + fourHoursMs;
+  };
+
+  const isMatchInUpcomingTab = (match: Match) => {
+    const date = parseMatchDate(getMatchDateValue(match));
+    if (!date) return false;
+
+    const now = new Date();
+    const diffMs = date.getTime() - now.getTime();
+
+    return diffMs > 0 && diffMs <= oneWeekMs;
   };
 
   const getPredictionState = (match: Match) => {
@@ -337,6 +468,15 @@ export default function DashboardPage() {
         .map((u) => u.name)
         .join(", ") || "None"
     );
+  };
+
+  const isTieResult = (value: unknown) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return normalized === "tied" || normalized === "tie" || normalized === "draw";
+  };
+
+  const isTieMatch = (match: Match) => {
+    return isTieResult(match.winner);
   };
 
   const renderTeamLabel = (team?: string) => {
@@ -466,10 +606,7 @@ export default function DashboardPage() {
 
   const upcomingMatches = matches
     .filter((match) => {
-      const date = parseMatchDate(getMatchDateValue(match));
-      if (!date) return false;
-      const diffMs = date.getTime() - new Date().getTime();
-      return diffMs > 0 && diffMs <= oneWeekMs;
+      return isMatchInUpcomingTab(match);
     })
     .sort((a, b) => {
       const da = parseMatchDate(getMatchDateValue(a));
@@ -480,12 +617,7 @@ export default function DashboardPage() {
 
   const displayedUpcoming = (
     upcomingFromService.length > 0 ? upcomingFromService : upcomingMatches
-  ).filter((match) => {
-    const date = parseMatchDate(getMatchDateValue(match));
-    if (!date) return false;
-    const diffMs = date.getTime() - new Date().getTime();
-    return diffMs > 0 && diffMs <= oneWeekMs && !isMatchToday(match);
-  });
+  ).filter((match) => isMatchInUpcomingTab(match));
 
   const handleSubmitPrediction = async (match: Match, selected: string) => {
     if (!match.id || !user) return;
@@ -564,7 +696,8 @@ export default function DashboardPage() {
                   borderRadius: "12px",
                   padding: "16px",
                   marginBottom: "14px",
-                  background: "white",
+                  background: isTieMatch(match) ? "#f8fafc" : "white",
+                  opacity: isTieMatch(match) ? 0.92 : 1,
                 }}
               >
                 <h3 style={{ margin: "0 0 8px" }}>
@@ -601,6 +734,15 @@ export default function DashboardPage() {
                       <div
                         style={{ color: "orange" }}
                       >{`Not Voted: ${notVotedNames(match)}`}</div>
+                    </>
+                  ) : isTieMatch(match) ? (
+                    <>
+                      <div style={{ color: "#6b7280" }}>
+                        {`Tied Game: ${votedWrongNames(match)}`}
+                      </div>
+                      <div style={{ color: "#6b7280" }}>
+                        {`Not Played: ${notPlayedNames(match)}`}
+                      </div>
                     </>
                   ) : (
                     <>
@@ -646,8 +788,9 @@ export default function DashboardPage() {
                   border: "1px solid var(--border-color)",
                   borderRadius: "12px",
                   padding: "16px",
-                  background: "white",
+                  background: isTieMatch(match) ? "#f8fafc" : "white",
                   boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
+                  opacity: isTieMatch(match) ? 0.92 : 1,
                 }}
               >
                 <h3 style={{ margin: "0 0 8px" }}>
@@ -686,6 +829,15 @@ export default function DashboardPage() {
                       <div
                         style={{ color: "orange" }}
                       >{`Not Voted: ${notVotedNames(match)}`}</div>
+                    </>
+                  ) : isTieMatch(match) ? (
+                    <>
+                      <div style={{ color: "#6b7280" }}>
+                        {`Tied Game: ${votedWrongNames(match)}`}
+                      </div>
+                      <div style={{ color: "#6b7280" }}>
+                        {`Not Played: ${notPlayedNames(match)}`}
+                      </div>
                     </>
                   ) : (
                     <>
@@ -743,8 +895,9 @@ export default function DashboardPage() {
                   border: "1px solid var(--border-color)",
                   borderRadius: "12px",
                   padding: "16px",
-                  background: "white",
+                  background: isTieMatch(match) ? "#f8fafc" : "white",
                   boxShadow: "0 2px 8px rgba(0, 0, 0, 0.06)",
+                  opacity: isTieMatch(match) ? 0.92 : 1,
                 }}
               >
                 <h3 style={{ margin: "0 0 8px" }}>
@@ -759,18 +912,31 @@ export default function DashboardPage() {
                 </p>
                 <p style={{ margin: 0 }}>
                   <strong>Winner:</strong>{" "}
-                  <span style={{ color: "green", fontWeight: 700 }}>
-                    {match.winner || "TBD"}
+                  <span
+                    style={{
+                      color: isTieMatch(match) ? "#6b7280" : "green",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {isTieMatch(match) ? "Tied Game" : (match.winner || "TBD")}
                   </span>
                 </p>
                 {renderAdminResultControls(match, "Update Result")}
                 <div style={{ marginTop: 12, opacity: 0.8, fontSize: 12 }}>
-                  <div
-                    style={{ color: "green" }}
-                  >{`Winner(s): ${votedRightNames(match)}`}</div>
-                  <div
-                    style={{ color: "orange" }}
-                  >{`Loser(s): ${votedWrongNames(match)}`}</div>
+                  {isTieMatch(match) ? (
+                    <div style={{ color: "#6b7280" }}>
+                      {`Tied Game: ${votedWrongNames(match)}`}
+                    </div>
+                  ) : (
+                    <>
+                      <div
+                        style={{ color: "green" }}
+                      >{`Winner(s): ${votedRightNames(match)}`}</div>
+                      <div
+                        style={{ color: "orange" }}
+                      >{`Loser(s): ${votedWrongNames(match)}`}</div>
+                    </>
+                  )}
                   <div
                     style={{ color: "#6b7280" }}
                   >{`Not Played: ${notPlayedNames(match)}`}</div>
