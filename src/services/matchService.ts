@@ -33,6 +33,11 @@ const isTieResult = (value: unknown): boolean => {
   return normalized === 'tied' || normalized === 'tie' || normalized === 'draw';
 };
 
+const getScoringTeams = (match: any): string[] => [
+  normalizeAnswer(match?.team1 || match?.homeTeam),
+  normalizeAnswer(match?.team2 || match?.awayTeam),
+].filter(Boolean);
+
 const getMatchDateFromData = (data: any): Date | null => {
   return (
     parseMatchDate(data?.kickoff?.ist) ||
@@ -76,8 +81,18 @@ const getMatchOutcomeStats = (
   prediction: unknown,
   winner: unknown,
   participated: boolean,
+  allPredictions: Array<{ prediction?: unknown }>,
 ): MatchOutcomeStats => {
   if (!winner) return emptyMatchOutcomeStats();
+
+  const normalizedPrediction = normalizeAnswer(prediction);
+  const normalizedWinner = normalizeAnswer(winner);
+  const winnerVotes = allPredictions.filter(
+    (item) => normalizeAnswer(item?.prediction) === normalizedWinner,
+  ).length;
+  const totalVotes = allPredictions.length;
+
+  if (!normalizedWinner) return emptyMatchOutcomeStats();
 
   if (!participated) {
     return {
@@ -90,36 +105,23 @@ const getMatchOutcomeStats = (
     };
   }
 
-  const normalizedPrediction = normalizeAnswer(prediction);
-  const normalizedWinner = normalizeAnswer(winner);
-
-  if (!normalizedWinner) return emptyMatchOutcomeStats();
-
   if (isTieResult(normalizedWinner)) {
-    if (isTieResult(normalizedPrediction)) {
-      return {
-        points: 10,
-        playedMatches: 1,
-        wonMatches: 0,
-        lostMatches: 0,
-        tiedMatches: 1,
-        notPlayedMatches: 0,
-      };
-    }
-
     return {
-      points: -10,
+      points: 0,
       playedMatches: 1,
       wonMatches: 0,
-      lostMatches: 1,
-      tiedMatches: 0,
+      lostMatches: 0,
+      tiedMatches: 1,
       notPlayedMatches: 0,
     };
   }
 
   if (normalizedPrediction === normalizedWinner) {
+    const winnerPoints =
+      winnerVotes > 0 ? (totalVotes * 10) / winnerVotes : 0;
+
     return {
-      points: 10,
+      points: winnerPoints,
       playedMatches: 1,
       wonMatches: 1,
       lostMatches: 0,
@@ -205,7 +207,7 @@ export const getMatches = async (): Promise<Match[]> => {
         pendingUsers: data.pendingUsers,
         pointsCalculated: data.pointsCalculated,
         votedRight: data.votedRight || [],
-        votedWrong: data.votedWrong || []
+        votedWrong: data.votedWrong || [],
       };
 
       return match;
@@ -259,7 +261,7 @@ export const getUpcomingMatches = async (): Promise<Match[]> => {
         pendingUsers: data.pendingUsers,
         pointsCalculated: data.pointsCalculated,
         votedRight: data.votedRight || [],
-        votedWrong: data.votedWrong || []
+        votedWrong: data.votedWrong || [],
       };
 
       return match;
@@ -359,25 +361,29 @@ export const finalizeMatch = async (matchDocId: string, winner: string): Promise
       predictionsByUser.set(uid, p);
     }
 
+    const allPredictions = Array.from(predictionsByUser.values());
+
     for (const user of users) {
       if (!user.id) continue;
 
       const prediction = predictionsByUser.get(user.id)?.prediction;
-      const nextStats = getMatchOutcomeStats(prediction, winner, predictionsByUser.has(user.id));
+      const nextStats = getMatchOutcomeStats(
+        prediction,
+        winner,
+        predictionsByUser.has(user.id),
+        allPredictions,
+      );
       const prevStats = getMatchOutcomeStats(
         prediction,
         previousWinner,
         predictionsByUser.has(user.id),
+        allPredictions,
       );
       const delta = getStatDelta(nextStats, prevStats);
 
       if (predictionsByUser.has(user.id)) {
         if (isTieResult(winner)) {
-          if (isTieResult(prediction)) {
-            votedRight.push(user.id);
-          } else {
-            votedWrong.push(user.id);
-          }
+          votedWrong.push(user.id);
         } else if (normalizeAnswer(prediction) === normalizeAnswer(winner)) {
           votedRight.push(user.id);
         } else {
