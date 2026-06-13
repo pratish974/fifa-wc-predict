@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import useCurrentUser from "../../hooks/useCurrentUser";
 import {
   getMatches,
@@ -96,14 +96,6 @@ export default function DashboardPage() {
   const [visitorLocationError, setVisitorLocationError] = useState("");
   const { user } = useCurrentUser();
 
-  useEffect(() => {
-    loadMatches();
-    loadUpcomingMatches();
-    loadLeaderboard();
-    loadUsers();
-    loadVisitorLocation();
-  }, []);
-
   const loadMatches = async () => {
     const data = await getMatches();
     setMatches(data as Match[]);
@@ -132,35 +124,13 @@ export default function DashboardPage() {
     }
   };
 
-  const loadVisitorLocation = async () => {
-    try {
-      // Try multiple location APIs with CORS-friendly options
-      const locationData = await tryLocationApis();
-      
-      if (locationData) {
-        setVisitorLocation(locationData);
-        setVisitorLocationError("");
-        console.log("Approx visitor location from IP lookup:", locationData);
-      } else {
-        throw new Error("All location APIs failed");
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to look up IP-based location";
-      setVisitorLocationError(message);
-      console.error("Approx visitor location lookup failed:", error);
-    }
-  };
-
-  const tryLocationApis = async (): Promise<ApproxLocation | null> => {
+  const tryLocationApis = useCallback(async (): Promise<ApproxLocation | null> => {
     // API 1: ip-api.com (CORS-friendly, JSON endpoint)
     try {
       const response = await fetch("https://ip-api.com/json/", {
         method: "GET",
         headers: {
-          "Accept": "application/json",
+          Accept: "application/json",
         },
         mode: "cors",
       });
@@ -187,14 +157,15 @@ export default function DashboardPage() {
     // API 2: ipify.org with geo addon (CORS-friendly)
     try {
       const response = await fetch(
-        "https://geo.ipify.org/api/v2/country,city?apiKey=at_" + generateDemoKey(),
+        "https://geo.ipify.org/api/v2/country,city?apiKey=at_" +
+          generateDemoKey(),
         {
           method: "GET",
           headers: {
-            "Accept": "application/json",
+            Accept: "application/json",
           },
           mode: "cors",
-        }
+        },
       );
 
       if (response.ok) {
@@ -221,7 +192,7 @@ export default function DashboardPage() {
       const response = await fetch("https://ipapi.co/json/", {
         method: "GET",
         headers: {
-          "Accept": "application/json",
+          Accept: "application/json",
         },
         mode: "cors",
       });
@@ -250,7 +221,7 @@ export default function DashboardPage() {
       const response = await fetch("https://api.ipify.org?format=json", {
         method: "GET",
         headers: {
-          "Accept": "application/json",
+          Accept: "application/json",
         },
         mode: "cors",
       });
@@ -270,7 +241,7 @@ export default function DashboardPage() {
     }
 
     return null;
-  };
+  }, []);
 
   // Helper to generate demo key (replace with real key if needed)
   const generateDemoKey = () => {
@@ -279,7 +250,10 @@ export default function DashboardPage() {
 
   const formatApproxLocation = (location: ApproxLocation | null) => {
     if (!location) return "";
-    const place = [location.city, location.region || location.country_name || location.country]
+    const place = [
+      location.city,
+      location.region || location.country_name || location.country,
+    ]
       .filter(Boolean)
       .join(", ");
     const ipPart = location.ip ? `IP ${location.ip}` : "";
@@ -300,7 +274,8 @@ export default function DashboardPage() {
     return value.getTime();
   }, []);
 
-  const getMatchDateValue = (match: Match) => match.kickoff?.ist || match.kickoff || match.date;
+  const getMatchDateValue = (match: Match) =>
+    match.kickoff?.ist || match.kickoff || match.date;
 
   const normalizeDate = (date: Date) => {
     const normalized = new Date(date);
@@ -471,14 +446,50 @@ export default function DashboardPage() {
   };
 
   const isTieResult = (value: unknown) => {
-    const normalized = String(value ?? "").trim().toLowerCase();
-    return normalized === "tied" || normalized === "tie" || normalized === "draw";
+    const normalized = String(value ?? "")
+      .trim()
+      .toLowerCase();
+    return (
+      normalized === "tied" || normalized === "tie" || normalized === "draw"
+    );
   };
 
   const isTieMatch = (match: Match) => {
     return isTieResult(match.winner);
   };
 
+  useEffect(() => {
+    loadMatches();
+    loadUpcomingMatches();
+    loadLeaderboard();
+    loadUsers();
+  }, []);
+
+  useEffect(() => {
+    const loadVisitorLocation = async () => {
+      try {
+        // Try multiple location APIs with CORS-friendly options
+        const locationData = await tryLocationApis();
+
+        if (locationData) {
+          setVisitorLocation(locationData);
+          setVisitorLocationError("");
+          console.log("Approx visitor location from IP lookup:", locationData);
+        } else {
+          throw new Error("All location APIs failed");
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to look up IP-based location";
+        setVisitorLocationError(message);
+        console.error("Approx visitor location lookup failed:", error);
+      }
+    };
+
+    loadVisitorLocation();
+  }, [tryLocationApis]);
   const renderTeamLabel = (team?: string) => {
     const name = team || "TBD";
     const icon = getNationIcon(name);
@@ -705,7 +716,8 @@ export default function DashboardPage() {
                   {renderTeamLabel(match.team2 || match.awayTeam)}
                 </h3>
                 <p style={{ margin: "0 0 6px" }}>
-                  <strong>Kickoff:</strong> {formatMatchDate(match.kickoff?.ist || match.date)}
+                  <strong>Kickoff:</strong>{" "}
+                  {formatMatchDate(match.kickoff?.ist || match.date)}
                 </p>
                 <p style={{ margin: 0 }}>
                   <strong>Status:</strong> {match.status}
@@ -798,7 +810,8 @@ export default function DashboardPage() {
                   {renderTeamLabel(match.team2 || match.awayTeam)}
                 </h3>
                 <p style={{ margin: "0 0 6px" }}>
-                  <strong>Kickoff:</strong> {formatMatchDate(match.kickoff?.ist || match.date)}
+                  <strong>Kickoff:</strong>{" "}
+                  {formatMatchDate(match.kickoff?.ist || match.date)}
                 </p>
                 <p style={{ margin: "0 0 6px" }}>
                   <strong>Location:</strong> {match.location || "TBD"}
@@ -905,7 +918,8 @@ export default function DashboardPage() {
                   {renderTeamLabel(match.team2 || match.awayTeam)}
                 </h3>
                 <p style={{ margin: "0 0 6px" }}>
-                  <strong>Kickoff:</strong> {formatMatchDate(match.kickoff?.ist || match.date)}
+                  <strong>Kickoff:</strong>{" "}
+                  {formatMatchDate(match.kickoff?.ist || match.date)}
                 </p>
                 <p style={{ margin: "0 0 6px" }}>
                   <strong>Location:</strong> {match.location || "Unknown"}
@@ -918,7 +932,7 @@ export default function DashboardPage() {
                       fontWeight: 700,
                     }}
                   >
-                    {isTieMatch(match) ? "Tied Game" : (match.winner || "TBD")}
+                    {isTieMatch(match) ? "Tied Game" : match.winner || "TBD"}
                   </span>
                 </p>
                 {renderAdminResultControls(match, "Update Result")}
