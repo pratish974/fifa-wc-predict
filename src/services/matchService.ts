@@ -33,11 +33,6 @@ const isTieResult = (value: unknown): boolean => {
   return normalized === 'tied' || normalized === 'tie' || normalized === 'draw';
 };
 
-const getScoringTeams = (match: any): string[] => [
-  normalizeAnswer(match?.team1 || match?.homeTeam),
-  normalizeAnswer(match?.team2 || match?.awayTeam),
-].filter(Boolean);
-
 const getMatchDateFromData = (data: any): Date | null => {
   return (
     parseMatchDate(data?.kickoff?.ist) ||
