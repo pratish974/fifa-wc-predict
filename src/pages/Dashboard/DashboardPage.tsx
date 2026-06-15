@@ -40,7 +40,6 @@ import {
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import LockIcon from "@mui/icons-material/Lock";
 
-
 const todayDate = new Date();
 const yesterdayDate = new Date(todayDate);
 yesterdayDate.setDate(todayDate.getDate() - 1);
@@ -74,8 +73,7 @@ const demoMatches: Match[] = [
     homeTeam: "Brazil",
     awayTeam: "Morocco",
     date: yesterdayDate.toISOString(),
-    location: "New York New Jersey Stadium",
-    status: "COMPLETED",
+    location: "COMPLETED",
     winner: "Brazil",
   },
   {
@@ -332,23 +330,27 @@ export default function DashboardPage() {
     return isTieResult(match.winner);
   };
 
-  const getDetailedVotingInfo = (match: Match) => {
+  // Get the logged in user's prediction selection if they are a regular USER
+  const getLoggedInUserPrediction = (match: Match) => {
+    if (!user || user.role === "ADMIN") return null;
+    const found = (match.predictions || []).find(
+      (p: any) => (p.userId || p.user) === user.id
+    );
+    return found ? found.prediction : null;
+  };
+
+  // Aggregates other voters into a horizontal plain string format
+  const getOtherVotersHorizontalList = (match: Match) => {
     const predictions = match.predictions || [];
-    const votingMap = new Map<string, string>();
-
-    predictions.forEach((p: any) => {
-      const userId = p.userId || p.user;
-      const prediction = p.prediction;
-
-      if (userId && prediction) {
-        const user = allUsers.find((u) => u.id === userId);
-        if (user && user.role !== "ADMIN") {
-          votingMap.set(user.name || user.id, prediction);
-        }
-      }
-    });
-
-    return votingMap;
+    return predictions
+      .map((p: any) => {
+        const userId = p.userId || p.user;
+        if (user && userId === user.id) return null; // hide current user configuration
+        const u = allUsers.find((uu) => uu.id === userId);
+        return u && u.role !== "ADMIN" ? u.name : null;
+      })
+      .filter(Boolean)
+      .join(", ") || "None";
   };
 
   const renderTeamLabel = (team?: string) => {
@@ -672,29 +674,22 @@ export default function DashboardPage() {
 
                       <Box sx={{ mt: 2 }}>
                         {match.status !== "COMPLETED" ? (
-                          <Box>
-                            <Typography variant="caption" sx={{ color: "success.main", fontWeight: "bold", mb: 0.5, display: "block" }}>
-                              Voted:
-                            </Typography>
-                            {getDetailedVotingInfo(match).size > 0 ? (
-                              <Box sx={{ pl: 1, borderLeft: "2px solid", borderColor: "success.light", mb: 1 }}>
-                                {Array.from(getDetailedVotingInfo(match)).map(([name, prediction]) => (
-                                  <Typography variant="caption" key={name} sx={{ display: "block" }}>
-                                    {name}: <strong>{prediction}</strong>
-                                  </Typography>
-                                ))}
-                              </Box>
-                            ) : (
-                              <Typography variant="caption" color="text.disabled" sx={{ pl: 1, mb: 1, display: "block" }}>
-                                No votes yet
+                          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                            
+                            {/* "You Selected" segment - Only shows to non-admin logged-in users who have a pick */}
+                            {user && user.role !== "ADMIN" && getLoggedInUserPrediction(match) && (
+                              <Typography variant="caption" sx={{ color: "primary.main", display: "block" }}>
+                                <strong>You Selected:</strong> <strong>{getLoggedInUserPrediction(match)}</strong>
                               </Typography>
                             )}
 
-                            <Typography variant="caption" sx={{ color: "warning.main", fontWeight: "bold", mb: 0.5, display: "block" }}>
-                              Not Voted:
+                            {/* Horizontal row of other voters without revealing choices */}
+                            <Typography variant="caption" sx={{ color: "success.main", display: "block" }}>
+                              <strong>Other Voters:</strong> {getOtherVotersHorizontalList(match)}
                             </Typography>
-                            <Typography variant="caption" sx={{ pl: 1, color: notVotedNames(match) !== "None" ? "text.primary" : "text.disabled", display: "block" }}>
-                              {notVotedNames(match) !== "None" ? notVotedNames(match) : "Everyone voted"}
+
+                            <Typography variant="caption" sx={{ color: "warning.main", display: "block" }}>
+                              <strong>Not Voted:</strong> {notVotedNames(match) !== "None" ? notVotedNames(match) : "Everyone voted"}
                             </Typography>
                           </Box>
                         ) : isTieMatch(match) ? (
