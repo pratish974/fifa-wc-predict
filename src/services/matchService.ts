@@ -153,6 +153,7 @@ const demoDemoMatches: Match[] = [
     team1: 'Mexico',
     team2: 'South Africa',
     date: new Date().toISOString(),
+    stage: 'Group Stage',
     location: 'Mexico City Stadium',
     status: 'OPEN',
     winner: null
@@ -195,6 +196,7 @@ export const getMatches = async (): Promise<Match[]> => {
         team2: data.away_team || data.team2,
         date: convertFirestoreTimestamp(data?.kickoff?.ist?.date),
         kickoff: data.kickoff,
+        stage: data.stage || '',
         location: data.location || data.venue || '',
         status: data.status || 'OPEN',
         winner: data.winner || null,
@@ -249,6 +251,7 @@ export const getUpcomingMatches = async (): Promise<Match[]> => {
         team2: data.team2,
         date: convertFirestoreTimestamp(data.date),
         kickoff: data.kickoff,
+        stage: data.stage || '',
         location: data.location || data.venue || '',
         status: data.status || 'OPEN',
         winner: data.winner || null,

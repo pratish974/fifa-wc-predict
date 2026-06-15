@@ -23,6 +23,7 @@ export interface Match {
     };
     [key: string]: any;
   };
+  stage?: string;
   location?: string;
   status?: 'OPEN' | 'COMPLETED';
 

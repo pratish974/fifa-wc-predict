@@ -4,6 +4,17 @@ import { getAllUsers, setCurrentUser } from "../../services/userService";
 import { User } from "../../models/User";
 import CryptoJS from 'crypto-js';
 
+// Material-UI Imports
+import { 
+  Container, 
+  Typography, 
+  TextField, 
+  Button, 
+  Box, 
+  Alert, 
+  CircularProgress 
+} from '@mui/material';
+
 const hardcodedAdminPassword = "7e4c97f0668951f5334520b5cb38bd73";
 
 const namePattern = /^[a-zA-Z][a-zA-Z _-]{1,29}$/;
@@ -71,69 +82,85 @@ export default function LoginPage() {
     navigate("/dashboard");
   };
 
-  
-
-function getMd5Hash(input: string): string {
-  return CryptoJS.MD5(input).toString();
-}
+  function getMd5Hash(input: string): string {
+    return CryptoJS.MD5(input).toString();
+  }
 
   return (
-    <div>
-      <h1>FIFA Prediction League</h1>
-
-      <label htmlFor="username" style={{ display: "block", marginBottom: 8 }}>
-        Username
-      </label>
-      <input
-        id="username"
-        list="users-list"
-        value={username}
-        onChange={(e) => {
-          setUsername(e.target.value);
-          setError("");
-          if (password) setPassword("");
+    <Container maxWidth="sm">
+      <Box 
+        sx={{ 
+          marginTop: 8, 
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'center',
+          boxShadow: 3,
+          padding: 4,
+          borderRadius: 2,
+          backgroundColor: 'background.paper'
         }}
-        style={{ width: "100%", padding: "10px", marginBottom: 8 }}
-        placeholder="Enter username"
-      />
-      <datalist id="users-list">
-        {users.map((u) => (
-          <option key={u.id} value={u.id} />
-        ))}
-      </datalist>
-
-      {isAdmin ? (
-        <>
-          <label
-            htmlFor="password"
-            style={{ display: "block", marginBottom: 8, marginTop: 16 }}
-          >
-            Admin password
-          </label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ width: "100%", padding: "10px", marginBottom: 8 }}
-            placeholder="Enter admin password"
-          />
-        </>
-      ) : null}
-
-      {error ? (
-        <div style={{ color: "red", marginBottom: 12 }}>{error}</div>
-      ) : null}
-
-      <button
-        onClick={login}
-        disabled={
-          loading || !usernameIsValid || !matchedUser || (isAdmin && !password)
-        }
-        style={{ padding: "10px 18px" }}
       >
-        {loading ? "Logging in..." : "Login"}
-      </button>
-    </div>
+        <Typography component="h1" variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
+          FIFA Prediction League
+        </Typography>
+
+        <Box sx={{ mt: 2, width: '100%' }}>
+          {/* Standard text input with no suggestions */}
+          <TextField
+            margin="normal"
+            required
+            fullWidth
+            id="username"
+            label="Username"
+            name="username"
+            placeholder="Enter username"
+            autoComplete="off"
+            value={username}
+            onChange={(e) => {
+              setUsername(e.target.value);
+              setError("");
+              if (password) setPassword("");
+            }}
+            variant="outlined"
+          />
+
+          {isAdmin && (
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              name="password"
+              label="Admin Password"
+              type="password"
+              id="password"
+              placeholder="Enter admin password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              variant="outlined"
+            />
+          )}
+
+          {error && (
+            <Alert severity="error" sx={{ mt: 2, width: '100%' }}>
+              {error}
+            </Alert>
+          )}
+
+          <Button
+            type="button"
+            fullWidth
+            variant="contained"
+            color="primary"
+            onClick={login}
+            disabled={
+              loading || !usernameIsValid || !matchedUser || (isAdmin && !password)
+            }
+            sx={{ mt: 3, mb: 2, py: 1.5 }}
+          >
+            {loading ? <CircularProgress size={24} color="inherit" /> : "Login"}
+          </Button>
+        </Box>
+      </Box>
+    </Container>
   );
 }

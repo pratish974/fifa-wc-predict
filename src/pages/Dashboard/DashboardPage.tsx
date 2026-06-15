@@ -18,6 +18,28 @@ import { Match } from "../../models/Match";
 import { getNationIcon } from "../../constants/nationsIcons";
 import { formatMatchDate, parseMatchDate } from "../../utils/dateUtils";
 
+// Material-UI Imports
+import {
+  Container,
+  Typography,
+  Box,
+  Card,
+  CardContent,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Button,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Grid,
+  Chip,
+  Tooltip,
+} from "@mui/material";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import LockIcon from "@mui/icons-material/Lock";
+
 type ApproxLocation = {
   ip?: string;
   city?: string;
@@ -90,10 +112,7 @@ export default function DashboardPage() {
     {},
   );
   const [leaderboard, setLeaderboard] = useState<Leaderboard[]>([]);
-  const [visitorLocation, setVisitorLocation] = useState<ApproxLocation | null>(
-    null,
-  );
-  const [visitorLocationError, setVisitorLocationError] = useState("");
+
   const { user } = useCurrentUser();
 
   const loadMatches = async () => {
@@ -125,7 +144,6 @@ export default function DashboardPage() {
   };
 
   const tryLocationApis = useCallback(async (): Promise<ApproxLocation | null> => {
-    // API 1: ip-api.com (CORS-friendly, JSON endpoint)
     try {
       const response = await fetch("https://ip-api.com/json/", {
         method: "GET",
@@ -154,7 +172,6 @@ export default function DashboardPage() {
       console.warn("ip-api.com failed:", err);
     }
 
-    // API 2: ipify.org with geo addon (CORS-friendly)
     try {
       const response = await fetch(
         "https://geo.ipify.org/api/v2/country,city?apiKey=at_" +
@@ -187,7 +204,6 @@ export default function DashboardPage() {
       console.warn("ipify.org failed:", err);
     }
 
-    // API 3: ipapi.co (fallback with JSONP or try again)
     try {
       const response = await fetch("https://ipapi.co/json/", {
         method: "GET",
@@ -216,7 +232,6 @@ export default function DashboardPage() {
       console.warn("ipapi.co failed:", err);
     }
 
-    // API 4: Fallback - use client IP detection (no external API needed)
     try {
       const response = await fetch("https://api.ipify.org?format=json", {
         method: "GET",
@@ -243,10 +258,16 @@ export default function DashboardPage() {
     return null;
   }, []);
 
-  // Helper to generate demo key (replace with real key if needed)
   const generateDemoKey = () => {
     return "KL7fMOx3L0Zu3F1JV5Dy";
   };
+
+  useEffect(() => {
+    loadMatches();
+    loadUpcomingMatches();
+    loadLeaderboard();
+    loadUsers();
+  }, []);
 
   const formatApproxLocation = (location: ApproxLocation | null) => {
     if (!location) return "";
@@ -446,72 +467,56 @@ export default function DashboardPage() {
   };
 
   const isTieResult = (value: unknown) => {
-    const normalized = String(value ?? "")
-      .trim()
-      .toLowerCase();
-    return (
-      normalized === "tied" || normalized === "tie" || normalized === "draw"
-    );
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return normalized === "tied" || normalized === "tie" || normalized === "draw";
   };
 
   const isTieMatch = (match: Match) => {
     return isTieResult(match.winner);
   };
 
-  useEffect(() => {
-    loadMatches();
-    loadUpcomingMatches();
-    loadLeaderboard();
-    loadUsers();
-  }, []);
+  const getDetailedVotingInfo = (match: Match) => {
+    const predictions = match.predictions || [];
+    const votingMap = new Map<string, string>();
 
-  useEffect(() => {
-    const loadVisitorLocation = async () => {
-      try {
-        // Try multiple location APIs with CORS-friendly options
-        const locationData = await tryLocationApis();
+    predictions.forEach((p: any) => {
+      const userId = p.userId || p.user;
+      const prediction = p.prediction;
 
-        if (locationData) {
-          setVisitorLocation(locationData);
-          setVisitorLocationError("");
-          console.log("Approx visitor location from IP lookup:", locationData);
-        } else {
-          throw new Error("All location APIs failed");
+      if (userId && prediction) {
+        const user = allUsers.find((u) => u.id === userId);
+        if (user && user.role !== "ADMIN") {
+          votingMap.set(user.name || user.id, prediction);
         }
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Unable to look up IP-based location";
-        setVisitorLocationError(message);
-        console.error("Approx visitor location lookup failed:", error);
       }
-    };
+    });
 
-    loadVisitorLocation();
-  }, [tryLocationApis]);
+    return votingMap;
+  };
+
   const renderTeamLabel = (team?: string) => {
     const name = team || "TBD";
     const icon = getNationIcon(name);
 
     return (
-      <span
-        style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
-      >
+      <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
         {icon ? (
-          <img
+          <Box
+            component="img"
             src={icon}
             alt={`${name} flag`}
-            style={{
+            sx={{
               width: 24,
               height: 16,
               objectFit: "cover",
-              borderRadius: 2,
+              borderRadius: 0.5,
             }}
           />
         ) : null}
-        <span>{name}</span>
-      </span>
+        <Typography component="span" variant="subtitle1" sx={{ fontWeight: 500 }}>
+          {name}
+        </Typography>
+      </Box>
     );
   };
 
@@ -520,32 +525,33 @@ export default function DashboardPage() {
     const selectedResult = selectedFinals[match.id || ""] || match.winner || "";
 
     return (
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <select
-          value={selectedResult}
-          onChange={(e) =>
-            setSelectedFinals((prev) => ({
-              ...prev,
-              [match.id || ""]: e.target.value,
-            }))
-          }
-        >
-          <option value="">Select result</option>
-          <option value={match.team1 || match.homeTeam}>
-            {match.team1 || match.homeTeam}
-          </option>
-          <option value={match.team2 || match.awayTeam}>
-            {match.team2 || match.awayTeam}
-          </option>
-          <option value={"TIED"}>TIED</option>
-        </select>
-        <button
+      <Box sx={{ display: "flex", gap: 1, alignItems: "center", mt: 1 }}>
+        <FormControl size="small" sx={{ minWidth: 150 }}>
+          <InputLabel>Select Result</InputLabel>
+          <Select
+            label="Select Result"
+            value={selectedResult}
+            onChange={(e) =>
+              setSelectedFinals((prev) => ({
+                ...prev,
+                [match.id || ""]: e.target.value,
+              }))
+            }
+          >
+            <MenuItem value=""><em>None</em></MenuItem>
+            <MenuItem value={match.team1 || match.homeTeam}>
+              {match.team1 || match.homeTeam}
+            </MenuItem>
+            <MenuItem value={match.team2 || match.awayTeam}>
+              {match.team2 || match.awayTeam}
+            </MenuItem>
+            <MenuItem value={"TIED"}>TIED</MenuItem>
+          </Select>
+        </FormControl>
+        <Button
+          size="medium"
+          variant="contained"
+          color="secondary"
           onClick={async () => {
             const val = selectedFinals[match.id || ""] || match.winner || "";
             if (!val) return;
@@ -554,8 +560,8 @@ export default function DashboardPage() {
           disabled={!selectedResult}
         >
           {actionLabel}
-        </button>
-      </div>
+        </Button>
+      </Box>
     );
   };
 
@@ -564,34 +570,33 @@ export default function DashboardPage() {
 
     const state = getPredictionState(match);
 
-    return (
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <select
-          value={selectedPredictions[match.id || ""] || ""}
-          onChange={(e) =>
-            setSelectedPredictions((prev) => ({
-              ...prev,
-              [match.id || ""]: e.target.value,
-            }))
-          }
-          disabled={state.disabled}
-          title={state.tooltip}
-        >
-          <option value="">Select winner</option>
-          <option value={match.team1 || match.homeTeam}>
-            {match.team1 || match.homeTeam}
-          </option>
-          <option value={match.team2 || match.awayTeam}>
-            {match.team2 || match.awayTeam}
-          </option>
-        </select>
-        <button
+    const controlMarkup = (
+      <Box sx={{ display: "flex", gap: 1, alignItems: "center", mt: 1 }}>
+        <FormControl size="small" sx={{ minWidth: 150 }} disabled={state.disabled}>
+          <InputLabel>Select Winner</InputLabel>
+          <Select
+            label="Select Winner"
+            value={selectedPredictions[match.id || ""] || ""}
+            onChange={(e) =>
+              setSelectedPredictions((prev) => ({
+                ...prev,
+                [match.id || ""]: e.target.value,
+              }))
+            }
+          >
+            <MenuItem value=""><em>None</em></MenuItem>
+            <MenuItem value={match.team1 || match.homeTeam}>
+              {match.team1 || match.homeTeam}
+            </MenuItem>
+            <MenuItem value={match.team2 || match.awayTeam}>
+              {match.team2 || match.awayTeam}
+            </MenuItem>
+          </Select>
+        </FormControl>
+        <Button
+          size="medium"
+          variant="contained"
+          startIcon={state.locked ? <LockIcon /> : null}
           onClick={async () => {
             const val = selectedPredictions[match.id || ""];
             if (!val) return;
@@ -603,11 +608,18 @@ export default function DashboardPage() {
               match.predictions.find((p) => p.userId === user.id)
             ) || state.disabled
           }
-          title={state.tooltip}
         >
-          {state.locked ? "🔒 Submit" : "Submit"}
-        </button>
-      </div>
+          {state.locked ? "Submit" : "Submit"}
+        </Button>
+      </Box>
+    );
+
+    return state.tooltip ? (
+      <Tooltip title={state.tooltip} arrow placement="top">
+        <span>{controlMarkup}</span>
+      </Tooltip>
+    ) : (
+      controlMarkup
     );
   };
 
@@ -634,7 +646,6 @@ export default function DashboardPage() {
     if (!match.id || !user) return;
     const ok = await submitPrediction(match.id, user.id, selected);
     if (ok) {
-      // Optimistically update local state
       const newPred = {
         matchId: match.id,
         userId: user.id,
@@ -659,7 +670,6 @@ export default function DashboardPage() {
         ...prev,
         [match.id || ""]: selectedWinner,
       }));
-      // reload matches/users/leaderboard
       await loadMatches();
       await loadUsers();
       await loadLeaderboard();
@@ -667,316 +677,277 @@ export default function DashboardPage() {
   };
 
   return (
-    <div style={{ padding: "24px" }}>
-      <h1>Dashboard</h1>
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Typography variant="h3" component="h1" gutterBottom sx={{ fontWeight: "bold" }}>
+        Dashboard
+      </Typography>
 
-      {/* Current user info */}
-      {user ? (
-        <div style={{ marginBottom: "12px" }}>
-          <strong>Signed in as:</strong> {user.name} ({user.role}) —{" "}
-          {user.points} pts
-        </div>
-      ) : null}
+      {user && (
+        <Chip 
+          label={`Signed in as: ${user.name} (${user.role}) — ${user.points.toFixed(2)} pts`} 
+          color="primary" 
+          variant="outlined" 
+          sx={{ mb: 3, fontSize: "1rem", py: 2 }}
+        />
+      )}
 
-      <details
-        open
-        style={{
-          marginBottom: "24px",
-          border: "1px solid var(--border-color)",
-          borderRadius: "12px",
-          padding: "16px",
-          background: "var(--card-background)",
-        }}
-      >
-        <summary
-          style={{ fontSize: "1.1rem", fontWeight: 700, cursor: "pointer" }}
-        >
-          Today's Matches - {todayLabel}
-        </summary>
-        <div style={{ marginTop: "16px" }}>
+      {/* TODAY'S MATCHES ACCORDION */}
+      <Accordion defaultExpanded sx={{ mb: 3, borderRadius: 2, '&:before': { display: 'none' }, border: '1px solid', borderColor: 'divider' }}>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography variant="h6" sx={{ fontWeight: "bold" }}>
+            Today's Matches - {todayLabel}
+          </Typography>
+        </AccordionSummary>
+        <AccordionDetails>
           {todayMatches.length === 0 ? (
-            <p>No matches scheduled for today.</p>
+            <Typography variant="body1" color="text.secondary">No matches scheduled for today.</Typography>
           ) : (
-            todayMatches.map((match) => (
-              <div
-                key={
-                  match.matchId || `${match.team1}_${match.team2}_${match.date}`
-                }
-                style={{
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "12px",
-                  padding: "16px",
-                  marginBottom: "14px",
-                  background: isTieMatch(match) ? "#f8fafc" : "white",
-                  opacity: isTieMatch(match) ? 0.92 : 1,
-                }}
-              >
-                <h3 style={{ margin: "0 0 8px" }}>
-                  {renderTeamLabel(match.team1 || match.homeTeam)} vs{" "}
-                  {renderTeamLabel(match.team2 || match.awayTeam)}
-                </h3>
-                <p style={{ margin: "0 0 6px" }}>
-                  <strong>Kickoff:</strong>{" "}
-                  {formatMatchDate(match.kickoff?.ist || match.date)}
-                </p>
-                <p style={{ margin: 0 }}>
-                  <strong>Status:</strong> {match.status}
-                </p>
-                {/* Prediction UI */}
-                {user ? (
-                  <div style={{ marginTop: 12 }}>
-                    {user.role === "USER"
-                      ? renderUserPredictionControls(match)
-                      : renderAdminResultControls(
-                          match,
-                          match.status === "COMPLETED"
-                            ? "Update Result"
-                            : "Finalize",
-                        )}
-                  </div>
-                ) : null}
-
-                {/* Footer: voted / not voted or votedRight / votedWrong */}
-                <div style={{ marginTop: 12, opacity: 0.8, fontSize: 12 }}>
-                  {match.status !== "COMPLETED" ? (
-                    <>
-                      <div
-                        style={{ color: "green" }}
-                      >{`Voted: ${votedNames(match)}`}</div>
-                      <div
-                        style={{ color: "orange" }}
-                      >{`Not Voted: ${notVotedNames(match)}`}</div>
-                    </>
-                  ) : isTieMatch(match) ? (
-                    <>
-                      <div style={{ color: "#6b7280" }}>
-                        {`Tied Game: ${votedWrongNames(match)}`}
-                      </div>
-                      <div style={{ color: "#6b7280" }}>
-                        {`Not Played: ${notPlayedNames(match)}`}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div
-                        style={{ color: "green" }}
-                      >{`Voted Right: ${votedRightNames(match)}`}</div>
-                      <div
-                        style={{ color: "orange" }}
-                      >{`Voted Wrong: ${votedWrongNames(match)}`}</div>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </details>
-
-      <details
-        style={{
-          marginBottom: "24px",
-          border: "1px solid var(--border-color)",
-          borderRadius: "12px",
-          padding: "16px",
-          background: "var(--card-background)",
-        }}
-      >
-        <summary
-          style={{ fontSize: "1.1rem", fontWeight: 700, cursor: "pointer" }}
-        >
-          Upcoming Matches
-        </summary>
-        <div style={{ marginTop: "16px", display: "grid", gap: "16px" }}>
-          {displayedUpcoming.length === 0 ? (
-            <p>No upcoming matches scheduled.</p>
-          ) : (
-            displayedUpcoming.map((match) => (
-              <div
-                key={
-                  match.matchId || `${match.team1}_${match.team2}_${match.date}`
-                }
-                style={{
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "12px",
-                  padding: "16px",
-                  background: isTieMatch(match) ? "#f8fafc" : "white",
-                  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
-                  opacity: isTieMatch(match) ? 0.92 : 1,
-                }}
-              >
-                <h3 style={{ margin: "0 0 8px" }}>
-                  {renderTeamLabel(match.team1 || match.homeTeam)} vs{" "}
-                  {renderTeamLabel(match.team2 || match.awayTeam)}
-                </h3>
-                <p style={{ margin: "0 0 6px" }}>
-                  <strong>Kickoff:</strong>{" "}
-                  {formatMatchDate(match.kickoff?.ist || match.date)}
-                </p>
-                <p style={{ margin: "0 0 6px" }}>
-                  <strong>Location:</strong> {match.location || "TBD"}
-                </p>
-                <p style={{ margin: 0 }}>
-                  <strong>Status:</strong> {match.status || "TBD"}
-                </p>
-                {/* Prediction UI for upcoming */}
-                {user ? (
-                  <div style={{ marginTop: 12 }}>
-                    {user.role === "USER"
-                      ? renderUserPredictionControls(match)
-                      : renderAdminResultControls(
-                          match,
-                          match.status === "COMPLETED"
-                            ? "Update Result"
-                            : "Finalize",
-                        )}
-                  </div>
-                ) : null}
-
-                <div style={{ marginTop: 12, opacity: 0.8, fontSize: 12 }}>
-                  {match.status !== "COMPLETED" ? (
-                    <>
-                      <div
-                        style={{ color: "green" }}
-                      >{`Voted: ${votedNames(match)}`}</div>
-                      <div
-                        style={{ color: "orange" }}
-                      >{`Not Voted: ${notVotedNames(match)}`}</div>
-                    </>
-                  ) : isTieMatch(match) ? (
-                    <>
-                      <div style={{ color: "#6b7280" }}>
-                        {`Tied Game: ${votedWrongNames(match)}`}
-                      </div>
-                      <div style={{ color: "#6b7280" }}>
-                        {`Not Played: ${notPlayedNames(match)}`}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ color: "green" }}>
-                        Voted Right:{" "}
-                        {(match.votedRight || [])
-                          .map((id: string) => {
-                            const u = allUsers.find((uu) => uu.id === id);
-                            return u ? u.name : id;
-                          })
-                          .join(", ") || "None"}
-                      </div>
-                      <div style={{ color: "orange" }}>
-                        Voted Wrong:{" "}
-                        {(match.votedWrong || [])
-                          .map((id: string) => {
-                            const u = allUsers.find((uu) => uu.id === id);
-                            return u ? u.name : id;
-                          })
-                          .join(", ") || "None"}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </details>
-
-      <details
-        style={{
-          marginBottom: "24px",
-          border: "1px solid var(--border-color)",
-          borderRadius: "12px",
-          padding: "16px",
-          background: "var(--card-background)",
-        }}
-      >
-        <summary
-          style={{ fontSize: "1.1rem", fontWeight: 700, cursor: "pointer" }}
-        >
-          Past Matches
-        </summary>
-        <div style={{ marginTop: "16px", display: "grid", gap: "16px" }}>
-          {pastMatches.length === 0 ? (
-            <p>No past matches are available yet.</p>
-          ) : (
-            pastMatches.map((match) => (
-              <div
-                key={
-                  match.matchId || `${match.team1}_${match.team2}_${match.date}`
-                }
-                style={{
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "12px",
-                  padding: "16px",
-                  background: isTieMatch(match) ? "#f8fafc" : "white",
-                  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.06)",
-                  opacity: isTieMatch(match) ? 0.92 : 1,
-                }}
-              >
-                <h3 style={{ margin: "0 0 8px" }}>
-                  {renderTeamLabel(match.team1 || match.homeTeam)} vs{" "}
-                  {renderTeamLabel(match.team2 || match.awayTeam)}
-                </h3>
-                <p style={{ margin: "0 0 6px" }}>
-                  <strong>Kickoff:</strong>{" "}
-                  {formatMatchDate(match.kickoff?.ist || match.date)}
-                </p>
-                <p style={{ margin: "0 0 6px" }}>
-                  <strong>Location:</strong> {match.location || "Unknown"}
-                </p>
-                <p style={{ margin: 0 }}>
-                  <strong>Winner:</strong>{" "}
-                  <span
-                    style={{
-                      color: isTieMatch(match) ? "#6b7280" : "green",
-                      fontWeight: 700,
+            <Grid container spacing={2}>
+              {todayMatches.map((match) => (
+                <Grid size={{ xs: 12 }} key={match.matchId || `${match.team1}_${match.team2}_${match.date}`}>
+                  <Card 
+                    variant="outlined" 
+                    sx={{ 
+                      backgroundColor: isTieMatch(match) ? "action.hover" : "background.paper",
+                      opacity: isTieMatch(match) ? 0.92 : 1
                     }}
                   >
-                    {isTieMatch(match) ? "Tied Game" : match.winner || "TBD"}
-                  </span>
-                </p>
-                {renderAdminResultControls(match, "Update Result")}
-                <div style={{ marginTop: 12, opacity: 0.8, fontSize: 12 }}>
-                  {isTieMatch(match) ? (
-                    <div style={{ color: "#6b7280" }}>
-                      {`Tied Game: ${votedWrongNames(match)}`}
-                    </div>
-                  ) : (
-                    <>
-                      <div
-                        style={{ color: "green" }}
-                      >{`Winner(s): ${votedRightNames(match)}`}</div>
-                      <div
-                        style={{ color: "orange" }}
-                      >{`Loser(s): ${votedWrongNames(match)}`}</div>
-                    </>
-                  )}
-                  <div
-                    style={{ color: "#6b7280" }}
-                  >{`Not Played: ${notPlayedNames(match)}`}</div>
-                </div>
-              </div>
-            ))
+                    <CardContent>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", mb: 1 }}>
+                        {renderTeamLabel(match.team1 || match.homeTeam)}
+                        <Typography color="text.secondary">vs</Typography>
+                        {renderTeamLabel(match.team2 || match.awayTeam)}
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        <strong>Kickoff:</strong> {formatMatchDate(match.kickoff?.ist || match.date)}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        <strong>Stage:</strong> {match.stage || "TBD"}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        <strong>Status:</strong> {match.status}
+                      </Typography>
+
+                      {user && renderUserPredictionControls(match)}
+                      {user && renderAdminResultControls(match, match.status === "COMPLETED" ? "Update Result" : "Finalize")}
+
+                      <Box sx={{ mt: 2, display: "flex", flexDirection: "column", gap: 0.5 }}>
+                        {match.status !== "COMPLETED" ? (
+                          <>
+                            <Typography variant="caption" sx={{ color: "success.main" }}>
+                              <strong>Voted:</strong> {votedNames(match)}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: "warning.main" }}>
+                              <strong>Not Voted:</strong> {notVotedNames(match)}
+                            </Typography>
+                          </>
+                        ) : isTieMatch(match) ? (
+                          <>
+                            <Typography variant="caption" color="text.secondary">
+                              <strong>Tied Game:</strong> {votedWrongNames(match)}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              <strong>Not Played:</strong> {notPlayedNames(match)}
+                            </Typography>
+                          </>
+                        ) : (
+                          <>
+                            <Typography variant="caption" sx={{ color: "success.main" }}>
+                              <strong>Voted Right:</strong> {votedRightNames(match)}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: "warning.main" }}>
+                              <strong>Voted Wrong:</strong> {votedWrongNames(match)}
+                            </Typography>
+                          </>
+                        )}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
           )}
-        </div>
-      </details>
+        </AccordionDetails>
+      </Accordion>
 
-      <section>
-        <h2>Leaderboard</h2>
+      {/* UPCOMING MATCHES ACCORDION */}
+      <Accordion sx={{ mb: 3, borderRadius: 2, '&:before': { display: 'none' }, border: '1px solid', borderColor: 'divider' }}>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography variant="h6" sx={{ fontWeight: "bold" }}>
+            Upcoming Matches
+          </Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          {displayedUpcoming.length === 0 ? (
+            <Typography variant="body1" color="text.secondary">No upcoming matches scheduled.</Typography>
+          ) : (
+            <Grid container spacing={2}>
+              {displayedUpcoming.map((match) => (
+                <Grid size={{ xs: 12, md: 6 }} key={match.matchId || `${match.team1}_${match.team2}_${match.date}`}>
+                  <Card 
+                    variant="outlined"
+                    sx={{ 
+                      backgroundColor: isTieMatch(match) ? "action.hover" : "background.paper",
+                      opacity: isTieMatch(match) ? 0.92 : 1
+                    }}
+                  >
+                    <CardContent>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", mb: 1 }}>
+                        {renderTeamLabel(match.team1 || match.homeTeam)}
+                        <Typography color="text.secondary">vs</Typography>
+                        {renderTeamLabel(match.team2 || match.awayTeam)}
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        <strong>Kickoff:</strong> {formatMatchDate(match.kickoff?.ist || match.date)}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        <strong>Stage:</strong> {match.stage || "TBD"}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        <strong>Location:</strong> {match.location || "TBD"}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        <strong>Status:</strong> {match.status || "TBD"}
+                      </Typography>
+
+                      {user && renderUserPredictionControls(match)}
+                      {user && renderAdminResultControls(match, match.status === "COMPLETED" ? "Update Result" : "Finalize")}
+
+                      <Box sx={{ mt: 2 }}>
+                        {match.status !== "COMPLETED" ? (
+                          <Box>
+                            <Typography variant="caption" sx={{ color: "success.main", fontWeight: "bold", mb: 0.5, display: "block" }}>
+                              Voted:
+                            </Typography>
+                            {getDetailedVotingInfo(match).size > 0 ? (
+                              <Box sx={{ pl: 1, borderLeft: "2px solid", borderColor: "success.light", mb: 1 }}>
+                                {Array.from(getDetailedVotingInfo(match)).map(([name, prediction]) => (
+                                  <Typography variant="caption" key={name} sx={{ display: "block" }}>
+                                    {name}: <strong>{prediction}</strong>
+                                  </Typography>
+                                ))}
+                              </Box>
+                            ) : (
+                              <Typography variant="caption" color="text.disabled" sx={{ pl: 1, mb: 1, display: "block" }}>
+                                No votes yet
+                              </Typography>
+                            )}
+
+                            <Typography variant="caption" sx={{ color: "warning.main", fontWeight: "bold", mb: 0.5, display: "block" }}>
+                              Not Voted:
+                            </Typography>
+                            <Typography variant="caption" sx={{ pl: 1, color: notVotedNames(match) !== "None" ? "text.primary" : "text.disabled", display: "block" }}>
+                              {notVotedNames(match) !== "None" ? notVotedNames(match) : "Everyone voted"}
+                            </Typography>
+                          </Box>
+                        ) : isTieMatch(match) ? (
+                          <Box sx={{ display: "flex", flexDirection: "column" }}>
+                            <Typography variant="caption" color="text.secondary">
+                              <strong>Tied Game:</strong> {votedWrongNames(match)}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              <strong>Not Played:</strong> {notPlayedNames(match)}
+                            </Typography>
+                          </Box>
+                        ) : (
+                          <Box sx={{ display: "flex", flexDirection: "column" }}>
+                            <Typography variant="caption" sx={{ color: "success.main" }}>
+                              <strong>Voted Right:</strong> {(match.votedRight || []).map(id => allUsers.find(uu => uu.id === id)?.name || id).join(", ") || "None"}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: "warning.main" }}>
+                              <strong>Voted Wrong:</strong> {(match.votedWrong || []).map(id => allUsers.find(uu => uu.id === id)?.name || id).join(", ") || "None"}
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          )}
+        </AccordionDetails>
+      </Accordion>
+
+      {/* PAST MATCHES ACCORDION */}
+      <Accordion sx={{ mb: 4, borderRadius: 2, '&:before': { display: 'none' }, border: '1px solid', borderColor: 'divider' }}>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography variant="h6" sx={{ fontWeight: "bold" }}>
+            Past Matches
+          </Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          {pastMatches.length === 0 ? (
+            <Typography variant="body1" color="text.secondary">No past matches are available yet.</Typography>
+          ) : (
+            <Grid container spacing={2}>
+              {pastMatches.map((match) => (
+                <Grid size={{ xs: 12, md: 6 }} key={match.matchId || `${match.team1}_${match.team2}_${match.date}`}>
+                  <Card 
+                    variant="outlined"
+                    sx={{ 
+                      backgroundColor: isTieMatch(match) ? "action.hover" : "background.paper",
+                      opacity: isTieMatch(match) ? 0.92 : 1
+                    }}
+                  >
+                    <CardContent>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", mb: 1 }}>
+                        {renderTeamLabel(match.team1 || match.homeTeam)}
+                        <Typography color="text.secondary">vs</Typography>
+                        {renderTeamLabel(match.team2 || match.awayTeam)}
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        <strong>Kickoff:</strong> {formatMatchDate(match.kickoff?.ist || match.date)}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        <strong>Location:</strong> {match.location || "Unknown"}
+                      </Typography>
+                      <Typography variant="body2" sx={{ mb: 1 }}>
+                        <strong>Winner:</strong>{" "}
+                        <Box component="span" sx={{ color: isTieMatch(match) ? "text.secondary" : "success.main", fontWeight: "bold" }}>
+                          {isTieMatch(match) ? "Tied Game" : match.winner || "TBD"}
+                        </Box>
+                      </Typography>
+
+                      {renderAdminResultControls(match, "Update Result")}
+
+                      <Box sx={{ mt: 2, display: "flex", flexDirection: "column", gap: 0.5 }}>
+                        {isTieMatch(match) ? (
+                          <Typography variant="caption" color="text.secondary">
+                            <strong>Tied Game:</strong> {votedWrongNames(match)}
+                          </Typography>
+                        ) : (
+                          <>
+                            <Typography variant="caption" sx={{ color: "success.main" }}>
+                              <strong>Winner(s):</strong> {votedRightNames(match)}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: "warning.main" }}>
+                              <strong>Voted Wrong:</strong> {votedWrongNames(match)}
+                            </Typography>
+                          </>
+                        )}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          )}
+        </AccordionDetails>
+      </Accordion>
+
+      {/* LEADERBOARD SECTION */}
+      <Box sx={{ mt: 4 }}>
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: "bold" }}>
+          Leaderboard
+        </Typography>
         <LeaderboardTable rows={leaderboard} />
-      </section>
+      </Box>
 
-      <footer
-        style={{
-          marginTop: "24px",
-          color: "#6b7280",
-          fontSize: "12px",
-        }}
-      >
-        {visitorLocation
-          ? `Location fetched: ${formatApproxLocation(visitorLocation) || "Approximate IP lookup complete"}`
-          : `Location fetch error: ${visitorLocationError || "Still looking up location"}`}
-      </footer>
-    </div>
+      {/* FOOTER */}
+      <Typography variant="caption" align="center" color="text.secondary" sx={{ mt: 4, display: "block" }}>
+        &copy; CR Mitra Mandal Football Prediction Game 2026. All rights reserved.
+      </Typography>
+    </Container>
   );
 }

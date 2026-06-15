@@ -5,6 +5,7 @@ import App from "./App";
 import "./styles/global.css";
 import reportWebVitals from "./reportWebVitals";
 import fifaEmblem from "./assets/nation_icons/2026_FIFA_World_Cup_emblem.svg.webp";
+import { StyledEngineProvider } from '@mui/material/styles';
 
 const appBaseName = (() => {
   const pathname = window.location.pathname.replace(/\/+$/, "");
@@ -16,9 +17,11 @@ const root = ReactDOM.createRoot(
 );
 root.render(
   <React.StrictMode>
-    <BrowserRouter basename={appBaseName}>
-      <App />
-    </BrowserRouter>
+    
+      <BrowserRouter basename={appBaseName}>
+        <App />
+      </BrowserRouter>
+
   </React.StrictMode>,
 );
 

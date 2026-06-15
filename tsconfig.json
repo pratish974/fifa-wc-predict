@@ -15,7 +15,13 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "ignoreDeprecations": "6.0",
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "react-transition-group/TransitionGroupContext": [
+        "node_modules/react-transition-group/TransitionGroupContext.js"
+      ]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "craco.config.js"]
 }

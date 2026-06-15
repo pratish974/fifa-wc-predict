@@ -27,7 +27,7 @@ const LeaderboardTable: React.FC<LeaderboardTableProps> = ({ rows }) => {
             <tr key={row.userId}>
               <td>{index + 1}</td>
               <td>{row.username}</td>
-              <td>{row.points}</td>
+              <td>{row.points.toFixed(2)}</td>
               <td>{row.playedMatches}</td>
               <td>{row.wonMatches}</td>
               <td>{row.lostMatches}</td>
