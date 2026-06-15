@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useCurrentUser from "../../hooks/useCurrentUser";
 import {
   getMatches,
@@ -40,18 +40,6 @@ import {
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import LockIcon from "@mui/icons-material/Lock";
 
-type ApproxLocation = {
-  ip?: string;
-  city?: string;
-  region?: string;
-  country?: string;
-  country_name?: string;
-  latitude?: number;
-  longitude?: number;
-  timezone?: string;
-  org?: string;
-  postal?: string;
-};
 
 const todayDate = new Date();
 const yesterdayDate = new Date(todayDate);
@@ -143,143 +131,12 @@ export default function DashboardPage() {
     }
   };
 
-  const tryLocationApis = useCallback(async (): Promise<ApproxLocation | null> => {
-    try {
-      const response = await fetch("https://ip-api.com/json/", {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-        mode: "cors",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        return {
-          ip: data.query,
-          city: data.city,
-          region: data.regionName,
-          country: data.countryCode,
-          country_name: data.country,
-          latitude: data.lat,
-          longitude: data.lon,
-          timezone: data.timezone,
-          org: data.isp,
-          postal: data.zip,
-        };
-      }
-    } catch (err) {
-      console.warn("ip-api.com failed:", err);
-    }
-
-    try {
-      const response = await fetch(
-        "https://geo.ipify.org/api/v2/country,city?apiKey=at_" +
-          generateDemoKey(),
-        {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-          },
-          mode: "cors",
-        },
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        return {
-          ip: data.ip,
-          city: data.location?.city,
-          region: data.location?.region,
-          country: data.location?.country,
-          country_name: data.location?.country,
-          latitude: data.location?.lat,
-          longitude: data.location?.lng,
-          timezone: data.location?.timezone,
-          org: data.isp?.org,
-          postal: data.postal?.code,
-        };
-      }
-    } catch (err) {
-      console.warn("ipify.org failed:", err);
-    }
-
-    try {
-      const response = await fetch("https://ipapi.co/json/", {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-        mode: "cors",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        return {
-          ip: data.ip,
-          city: data.city,
-          region: data.region,
-          country: data.country_code,
-          country_name: data.country_name,
-          latitude: data.latitude,
-          longitude: data.longitude,
-          timezone: data.timezone,
-          org: data.org,
-          postal: data.postal,
-        };
-      }
-    } catch (err) {
-      console.warn("ipapi.co failed:", err);
-    }
-
-    try {
-      const response = await fetch("https://api.ipify.org?format=json", {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-        mode: "cors",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        return {
-          ip: data.ip,
-          city: "Unknown",
-          region: "Unknown",
-          country: "Unknown",
-          country_name: "Unknown",
-        };
-      }
-    } catch (err) {
-      console.warn("ipify.org IP-only failed:", err);
-    }
-
-    return null;
-  }, []);
-
-  const generateDemoKey = () => {
-    return "KL7fMOx3L0Zu3F1JV5Dy";
-  };
-
   useEffect(() => {
     loadMatches();
     loadUpcomingMatches();
     loadLeaderboard();
     loadUsers();
   }, []);
-
-  const formatApproxLocation = (location: ApproxLocation | null) => {
-    if (!location) return "";
-    const place = [
-      location.city,
-      location.region || location.country_name || location.country,
-    ]
-      .filter(Boolean)
-      .join(", ");
-    const ipPart = location.ip ? `IP ${location.ip}` : "";
-    return [place, ipPart].filter(Boolean).join(" | ");
-  };
 
   const todayLabel = useMemo(() => {
     return new Date().toLocaleDateString(undefined, {
