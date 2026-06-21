@@ -17,21 +17,12 @@ import { Match } from '../models/Match';
 import { parseMatchDate } from '../utils/dateUtils';
 import { getAllUsers } from './userService';
 
-// Return the raw Firestore timestamp/value unchanged.
-// We previously converted timestamps to ISO strings here, but that caused
-// timezone/identity issues when rendering and filtering. Keep the original
-// value so callers can decide how to parse/format it.
 const convertFirestoreTimestamp = (value: any): any => {
   return value;
 };
 
 const normalizeAnswer = (value: unknown): string =>
   String(value ?? '').trim().toLowerCase();
-
-const isTieResult = (value: unknown): boolean => {
-  const normalized = normalizeAnswer(value);
-  return normalized === 'tied' || normalized === 'tie' || normalized === 'draw';
-};
 
 const getMatchDateFromData = (data: any): Date | null => {
   return (
@@ -82,6 +73,8 @@ const getMatchOutcomeStats = (
 
   const normalizedPrediction = normalizeAnswer(prediction);
   const normalizedWinner = normalizeAnswer(winner);
+  
+  // Dynamic pool selection counts for whatever option is selected (Argentina, Portugal, or TIED)
   const winnerVotes = allPredictions.filter(
     (item) => normalizeAnswer(item?.prediction) === normalizedWinner,
   ).length;
@@ -100,20 +93,9 @@ const getMatchOutcomeStats = (
     };
   }
 
-  if (isTieResult(normalizedWinner)) {
-    return {
-      points: 0,
-      playedMatches: 1,
-      wonMatches: 0,
-      lostMatches: 0,
-      tiedMatches: 1,
-      notPlayedMatches: 0,
-    };
-  }
-
+  // Exact Match condition handles correct team outcomes AND correct "TIED" outcomes identically
   if (normalizedPrediction === normalizedWinner) {
-    const winnerPoints =
-      winnerVotes > 0 ? (totalVotes * 10) / winnerVotes : 0;
+    const winnerPoints = winnerVotes > 0 ? (totalVotes * 10) / winnerVotes : 0;
 
     return {
       points: winnerPoints,
@@ -125,6 +107,7 @@ const getMatchOutcomeStats = (
     };
   }
 
+  // Covers all losing scenarios (-10 points)
   return {
     points: -10,
     playedMatches: 1,
@@ -144,7 +127,6 @@ const getStatDelta = (next: MatchOutcomeStats, prev: MatchOutcomeStats) => ({
   notPlayedMatches: next.notPlayedMatches - prev.notPlayedMatches,
 });
 
-// Demo data fallback for when Firebase is unavailable
 const demoDemoMatches: Match[] = [
   {
     matchId: 'demo-1',
@@ -173,9 +155,7 @@ const demoDemoMatches: Match[] = [
 
 export const getMatches = async (): Promise<Match[]> => {
   try {
-    const q = query(collection(db, 'matches'),
-      // orderBy('date', 'desc')
-    );
+    const q = query(collection(db, 'matches'));
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
@@ -186,8 +166,7 @@ export const getMatches = async (): Promise<Match[]> => {
     return snapshot.docs.map((doc) => {
       const data = doc.data() as any;
 
-
-      const match: Match = {
+      return {
         id: doc.id,
         matchId: data.matchId || doc.id,
         homeTeam: data.home_team || data.team1,
@@ -206,12 +185,9 @@ export const getMatches = async (): Promise<Match[]> => {
         votedRight: data.votedRight || [],
         votedWrong: data.votedWrong || [],
       };
-
-      return match;
     });
   } catch (error) {
     console.error('Error fetching matches from Firestore:', error);
-    // Return demo data if Firebase fetch fails
     return demoDemoMatches;
   }
 };
@@ -242,7 +218,7 @@ export const getUpcomingMatches = async (): Promise<Match[]> => {
     return snapshot.docs.map((doc) => {
       const data = doc.data() as any;
 
-      const match: Match = {
+      return {
         id: doc.id,
         matchId: data.matchId || doc.id,
         homeTeam: data.homeTeam || data.team1,
@@ -261,12 +237,9 @@ export const getUpcomingMatches = async (): Promise<Match[]> => {
         votedRight: data.votedRight || [],
         votedWrong: data.votedWrong || [],
       };
-
-      return match;
     });
   } catch (error) {
     console.error('Error fetching upcoming matches from Firestore:', error);
-    console.warn('Returning demo upcoming matches due to error');
     const nowMs = new Date().getTime();
     return demoDemoMatches.filter(m => {
       try {
@@ -305,9 +278,7 @@ export const submitPrediction = async (
     }
 
     const preds = Array.isArray(data.predictions) ? data.predictions : [];
-
-    // prevent duplicate prediction by same user
-    const existing = preds.find((p: any) => p.userId === userId || p.user === userId || p.user === userId);
+    const existing = preds.find((p: any) => p.userId === userId || p.user === userId);
     if (existing) return false;
 
     const newPred = {
@@ -340,17 +311,7 @@ export const finalizeMatch = async (matchDocId: string, winner: string): Promise
     const batch = writeBatch(db);
     const votedRight: string[] = [];
     const votedWrong: string[] = [];
-    const userDeltas = new Map<
-      string,
-      {
-        points: number;
-        playedMatches: number;
-        wonMatches: number;
-        lostMatches: number;
-        tiedMatches: number;
-        notPlayedMatches: number;
-      }
-    >();
+    const userDeltas = new Map<string, any>();
 
     const predictionsByUser = new Map<string, any>();
     for (const p of preds) {
@@ -365,24 +326,12 @@ export const finalizeMatch = async (matchDocId: string, winner: string): Promise
       if (!user.id) continue;
 
       const prediction = predictionsByUser.get(user.id)?.prediction;
-      const nextStats = getMatchOutcomeStats(
-        prediction,
-        winner,
-        predictionsByUser.has(user.id),
-        allPredictions,
-      );
-      const prevStats = getMatchOutcomeStats(
-        prediction,
-        previousWinner,
-        predictionsByUser.has(user.id),
-        allPredictions,
-      );
+      const nextStats = getMatchOutcomeStats(prediction, winner, predictionsByUser.has(user.id), allPredictions);
+      const prevStats = getMatchOutcomeStats(prediction, previousWinner, predictionsByUser.has(user.id), allPredictions);
       const delta = getStatDelta(nextStats, prevStats);
 
       if (predictionsByUser.has(user.id)) {
-        if (isTieResult(winner)) {
-          votedWrong.push(user.id);
-        } else if (normalizeAnswer(prediction) === normalizeAnswer(winner)) {
+        if (normalizeAnswer(prediction) === normalizeAnswer(winner)) {
           votedRight.push(user.id);
         } else {
           votedWrong.push(user.id);
