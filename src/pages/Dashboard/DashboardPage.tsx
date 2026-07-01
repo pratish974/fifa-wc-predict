@@ -353,6 +353,71 @@ export default function DashboardPage() {
     );
   };
 
+  const hasLoggedInUserVoted = (match: Match) => {
+    if (!user || user.role !== "USER") return false;
+    return (match.predictions || []).some(
+      (p: any) => (p.userId || p.user) === user.id,
+    );
+  };
+
+  const getTeamVoters = (match: Match, teamName: string) => {
+    const normalizedTarget = String(teamName || "")
+      .trim()
+      .toLowerCase();
+
+    return (
+      (match.predictions || [])
+        .map((p: any) => {
+          const pickedTeam = String(p.prediction || "")
+            .trim()
+            .toLowerCase();
+          if (pickedTeam !== normalizedTarget) return null;
+
+          const pickedUserId = p.userId || p.user;
+          const pickedUser = allUsers.find((u) => u.id === pickedUserId);
+          return pickedUser && pickedUser.role !== "ADMIN"
+            ? pickedUser.name
+            : null;
+        })
+        .filter(Boolean)
+        .join(", ") || "None"
+    );
+  };
+
+  const getVoterTeamSelections = (match: Match) => {
+    return (
+      (match.predictions || [])
+        .map((p: any) => {
+          const pickedUserId = p.userId || p.user;
+          const pickedUser = allUsers.find((u) => u.id === pickedUserId);
+          if (!pickedUser || pickedUser.role === "ADMIN") return null;
+
+          const pickedTeam = String(p.prediction || "").trim() || "No Selection";
+          return `${pickedUser.name} - ${pickedTeam}`;
+        })
+        .filter(Boolean) as string[]
+    );
+  };
+
+  const isTodayMatchLockedForReveal = (match: Match) => {
+    if (!isMatchToday(match)) return false;
+
+    const status = String(match.status || "")
+      .trim()
+      .toUpperCase();
+
+    if (status === "LOCKED" || status === "IN_PROGRESS" || status === "COMPLETED") {
+      return true;
+    }
+
+    return getPredictionState(match).locked;
+  };
+
+  const shouldRevealTodaySelections = (match: Match) => {
+    if (!isTodayMatchLockedForReveal(match)) return false;
+    return hasLoggedInUserVoted(match);
+  };
+
   const renderTeamLabel = (team?: string) => {
     const name = team || "TBD";
     const icon = getNationIcon(name);
@@ -669,18 +734,86 @@ export default function DashboardPage() {
                       >
                         {match.status !== "COMPLETED" ? (
                           <>
-                            <Typography
-                              variant="caption"
-                              sx={{ color: "success.main" }}
-                            >
-                              <strong>Voted:</strong> {votedNames(match)}
-                            </Typography>
-                            <Typography
-                              variant="caption"
-                              sx={{ color: "warning.main" }}
-                            >
-                              <strong>Not Voted:</strong> {notVotedNames(match)}
-                            </Typography>
+                            {shouldRevealTodaySelections(match) ? (
+                              <>
+                                <Typography
+                                  variant="caption"
+                                  sx={{ color: "primary.main" }}
+                                >
+                                  <strong>You Selected:</strong>{" "}
+                                  <strong>{getLoggedInUserPrediction(match)}</strong>
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  sx={{ color: "success.main" }}
+                                >
+                                  <strong>{match.team1 || match.homeTeam}:</strong>{" "}
+                                  {getTeamVoters(
+                                    match,
+                                    match.team1 || match.homeTeam || "",
+                                  )}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  sx={{ color: "success.main" }}
+                                >
+                                  <strong>{match.team2 || match.awayTeam}:</strong>{" "}
+                                  {getTeamVoters(
+                                    match,
+                                    match.team2 || match.awayTeam || "",
+                                  )}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  sx={{ color: "info.main", mt: 0.5 }}
+                                >
+                                  <strong>Person + Team:</strong>
+                                </Typography>
+                                {getVoterTeamSelections(match).length > 0 ? (
+                                  getVoterTeamSelections(match).map((entry) => (
+                                    <Typography
+                                      key={entry}
+                                      variant="caption"
+                                      sx={{ color: "info.main" }}
+                                    >
+                                      {entry}
+                                    </Typography>
+                                  ))
+                                ) : (
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ color: "info.main" }}
+                                  >
+                                    None
+                                  </Typography>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                {isMatchToday(match) &&
+                                  hasLoggedInUserVoted(match) &&
+                                  !isTodayMatchLockedForReveal(match) && (
+                                    <Typography
+                                      variant="caption"
+                                      sx={{ color: "info.main" }}
+                                    >
+                                      You voted. Team-wise selections will be visible once this match is locked.
+                                    </Typography>
+                                  )}
+                                <Typography
+                                  variant="caption"
+                                  sx={{ color: "success.main" }}
+                                >
+                                  <strong>Voted:</strong> {votedNames(match)}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  sx={{ color: "warning.main" }}
+                                >
+                                  <strong>Not Voted:</strong> {notVotedNames(match)}
+                                </Typography>
+                              </>
+                            )}
                           </>
                         ) : (
                           <>
