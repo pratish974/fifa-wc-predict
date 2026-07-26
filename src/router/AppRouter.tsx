@@ -7,7 +7,7 @@ import {
 import LoginPage from "../pages/Login/LoginPage";
 import DashboardPage from "../pages/Dashboard/DashboardPage";
 import ProtectedRoute from "./ProtectedRoute";
-import ItineraryPlannerPage from "./itienary/ItineraryPlannerPage";
+import ItineraryPlannerPage from "../itienary/ItineraryPlannerPage";
 
 export default function AppRouter() {
   return (
