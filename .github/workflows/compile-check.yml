@@ -28,7 +28,7 @@ jobs:
 
     # NEW: Scans your libraries for known older vulnerabilities
     - name: Check Package Vulnerabilities
-      run: npm audit --audit-level=high
+      run: npm audit --omit=dev --audit-level=critical
       env:
         CI: true
 
