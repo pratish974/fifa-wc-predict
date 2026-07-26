@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import CurrentItinerarySection from "./components/CurrentItinerarySection";
 import PlacesListSection from "./components/PlacesListSection";
 import PlannerHeader from "./components/PlannerHeader";
-import { getPlannerSnapshot } from "./plannerService";
 import {
+  ItineraryInput,
   PlannerSnapshot,
   PlacesToEatRecord,
   PlacesToVisitRecord,
   UserRole,
 } from "./types";
 import usePlannerRole from "./hooks/usePlannerRole";
+import { getCurrentUser } from "../services/userService";
 import {
   buildSummaryFromEditableDays,
   EditableDay,
@@ -20,26 +21,32 @@ import {
 } from "./summaryFirestoreService";
 import "./itinerary.css";
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error("timeout"));
-    }, timeoutMs);
-
-    promise
-      .then((value) => {
-        clearTimeout(timer);
-        resolve(value);
-      })
-      .catch((error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-  });
-}
-
 function makeId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function isIsoDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function getNextDateIso(days: EditableDay[], fallbackDate: string): string {
+  const lastValidIso = [...days]
+    .reverse()
+    .map((day) => day.date)
+    .find((date) => isIsoDate(date));
+
+  const baseDate = lastValidIso || (isIsoDate(fallbackDate) ? fallbackDate : "");
+  if (!baseDate) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  const parsed = new Date(`${baseDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  parsed.setDate(parsed.getDate() + 1);
+  return parsed.toISOString().slice(0, 10);
 }
 
 function getFriendlyFirestoreError(error: unknown, phase: "read" | "write"): string {
@@ -132,6 +139,51 @@ function parseStoredEditableDays(value: string | undefined): EditableDay[] | nul
   }
 }
 
+function mapStoredUserRoleToPlannerRole(role: string | undefined): UserRole {
+  const normalized = String(role || "").trim().toUpperCase();
+  if (normalized === "ADMIN") return "admin";
+  return "viewer";
+}
+
+function buildSnapshotFromFirestore(params: {
+  itineraryId: string;
+  itinerary: Partial<ItineraryInput> | undefined;
+  summary: PlannerSnapshot["summary"];
+  placesToVisit: PlacesToVisitRecord[];
+  placesToEat: PlacesToEatRecord[];
+}): PlannerSnapshot {
+  const storedUser = getCurrentUser();
+  const itinerary = params.itinerary || {};
+  const startDate = itinerary.startDate || params.summary.summaryDays[0]?.date || new Date().toISOString().slice(0, 10);
+  const endDate =
+    itinerary.endDate ||
+    params.summary.summaryDays[params.summary.summaryDays.length - 1]?.date ||
+    startDate;
+
+  return {
+    currentUser: {
+      uid: storedUser?.id || "unknown-user",
+      email: "",
+      displayName: storedUser?.name || "Planner User",
+      role: mapStoredUserRoleToPlannerRole(storedUser?.role),
+    },
+    itinerary: {
+      itineraryId: itinerary.itineraryId || params.itineraryId,
+      tripTitle: itinerary.tripTitle || "Untitled Trip",
+      locationRegion: itinerary.locationRegion || "",
+      startDate,
+      endDate,
+      status: itinerary.status || "published",
+      createdBy: itinerary.createdBy || storedUser?.id || "system",
+      updatedBy: itinerary.updatedBy || storedUser?.id || "system",
+      days: itinerary.days || [],
+    },
+    summary: params.summary,
+    placesToVisit: params.placesToVisit,
+    placesToEat: params.placesToEat,
+  };
+}
+
 export default function ItineraryPlannerPage() {
   const [snapshot, setSnapshot] = useState<PlannerSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -139,6 +191,7 @@ export default function ItineraryPlannerPage() {
   const [error, setError] = useState<string>("");
   const [info, setInfo] = useState<string>("");
   const [editableDays, setEditableDays] = useState<EditableDay[]>([]);
+  const [selectedEditDayId, setSelectedEditDayId] = useState<string>("");
   const [editableVisitPlaces, setEditableVisitPlaces] = useState<PlacesToVisitRecord[]>([]);
   const [editableEatPlaces, setEditableEatPlaces] = useState<PlacesToEatRecord[]>([]);
   const [activeView, setActiveView] = useState<"itinerary" | "edit">("itinerary");
@@ -157,45 +210,52 @@ export default function ItineraryPlannerPage() {
       setInfo("");
 
       try {
-        const baseData = await getPlannerSnapshot();
-        setSnapshot(baseData);
-        setEditableDays(mapSummaryToEditableDays(baseData));
-        setEditableVisitPlaces(withSortOrderVisit(baseData.placesToVisit));
-        setEditableEatPlaces(withSortOrderEat(baseData.placesToEat));
-        setLoading(false);
+        const saved = await loadLatestSummaryFromFirestore("it-100");
 
-        try {
-          const saved = await withTimeout(
-            loadLatestSummaryFromFirestore(baseData.itinerary.itineraryId),
-            2500,
-          );
-
-          if (!saved?.summary) {
-            return;
-          }
-
-          const hydratedData = {
-            ...baseData,
-            summary: saved.summary,
-            placesToVisit: saved.placesToVisit || baseData.placesToVisit,
-            placesToEat: saved.placesToEat || baseData.placesToEat,
-          };
-          setSnapshot(hydratedData);
-          const restoredEditor = parseStoredEditableDays(saved.editorText);
-          setEditableDays(restoredEditor || mapSummaryToEditableDays(hydratedData));
-          setEditableVisitPlaces(withSortOrderVisit(hydratedData.placesToVisit));
-          setEditableEatPlaces(withSortOrderEat(hydratedData.placesToEat));
-        } catch (syncError) {
-          setInfo(getFriendlyFirestoreError(syncError, "read"));
+        if (!saved?.summary) {
+          setError("No itinerary data found in Firestore.");
+          setLoading(false);
+          return;
         }
-      } catch {
-        setError("Failed to load itinerary mock data.");
+
+        const visitPlaces = withSortOrderVisit(saved.placesToVisit || []);
+        const eatPlaces = withSortOrderEat(saved.placesToEat || []);
+        const firestoreSnapshot = buildSnapshotFromFirestore({
+          itineraryId: saved.itinerary?.itineraryId || saved.summary.itineraryId,
+          itinerary: saved.itinerary,
+          summary: saved.summary,
+          placesToVisit: visitPlaces,
+          placesToEat: eatPlaces,
+        });
+
+        setSnapshot(firestoreSnapshot);
+        const restoredEditor = parseStoredEditableDays(saved.editorText);
+        setEditableDays(restoredEditor || mapSummaryToEditableDays(firestoreSnapshot));
+        setEditableVisitPlaces(visitPlaces);
+        setEditableEatPlaces(eatPlaces);
+        setLoading(false);
+      } catch (syncError) {
+        setError(getFriendlyFirestoreError(syncError, "read"));
         setLoading(false);
       }
     };
 
     void load();
   }, []);
+
+  useEffect(() => {
+    if (editableDays.length === 0) {
+      if (selectedEditDayId) {
+        setSelectedEditDayId("");
+      }
+      return;
+    }
+
+    const stillExists = editableDays.some((day) => day.id === selectedEditDayId);
+    if (!selectedEditDayId || !stillExists) {
+      setSelectedEditDayId(editableDays[0].id);
+    }
+  }, [editableDays, selectedEditDayId]);
 
   const effectiveRole: UserRole = useMemo(() => {
     if (firestoreRole) {
@@ -210,6 +270,9 @@ export default function ItineraryPlannerPage() {
   }, [firestoreRole, snapshot]);
 
   const canSubmit = true;
+
+  const selectedDayIndex = editableDays.findIndex((day) => day.id === selectedEditDayId);
+  const selectedEditableDay = selectedDayIndex >= 0 ? editableDays[selectedDayIndex] : null;
 
   const handleSubmit = async () => {
     if (!snapshot || !canSubmit) {
@@ -239,9 +302,15 @@ export default function ItineraryPlannerPage() {
 
       await saveLatestSummaryToFirestore({
         itineraryId: snapshot.itinerary.itineraryId,
+        tripTitle: snapshot.itinerary.tripTitle,
         summary: generatedSummary,
         editorText: JSON.stringify(editableDays),
         locationRegion: snapshot.itinerary.locationRegion,
+        startDate: snapshot.itinerary.startDate,
+        endDate: snapshot.itinerary.endDate,
+        status: snapshot.itinerary.status,
+        createdBy: snapshot.itinerary.createdBy,
+        updatedBy: snapshot.currentUser.uid,
         placesToVisit: withSortOrderVisit(editableVisitPlaces),
         placesToEat: withSortOrderEat(editableEatPlaces),
       });
@@ -324,14 +393,18 @@ export default function ItineraryPlannerPage() {
 
   const addDayBlock = () => {
     const fallbackDate = snapshot?.itinerary.startDate || new Date().toISOString().slice(0, 10);
+    const newDayId = makeId("day");
+
     setEditableDays((prev) => [
       ...prev,
       {
-        id: makeId("day"),
-        date: fallbackDate,
+        id: newDayId,
+        date: getNextDateIso(prev, fallbackDate),
         points: [{ id: makeId("point"), time: "", activity: "" }],
       },
     ]);
+
+    setSelectedEditDayId(newDayId);
   };
 
   const removeDayBlock = (dayId: string) => {
@@ -339,7 +412,11 @@ export default function ItineraryPlannerPage() {
       if (prev.length <= 1) {
         return prev;
       }
-      return prev.filter((day) => day.id !== dayId);
+      const nextDays = prev.filter((day) => day.id !== dayId);
+      if (selectedEditDayId === dayId) {
+        setSelectedEditDayId(nextDays[0]?.id || "");
+      }
+      return nextDays;
     });
   };
 
@@ -440,7 +517,7 @@ export default function ItineraryPlannerPage() {
             Last generated: <strong>{new Date(snapshot.summary.generatedAtIso).toLocaleString()}</strong>
           </p>
           <p>
-            Source: <strong>Local generator + Firestore</strong>
+            Source: <strong>Firestore</strong>
           </p>
         </section>
 
@@ -473,29 +550,42 @@ export default function ItineraryPlannerPage() {
               <h2>Edit Itinerary Points</h2>
             </div>
             <div className="itn-editor-wrap">
+              <div className="itn-day-editor-head">
+                <label htmlFor="itn-edit-day-selector">Select day</label>
+                <select
+                  id="itn-edit-day-selector"
+                  className="itn-input-date"
+                  value={selectedEditDayId}
+                  onChange={(event) => setSelectedEditDayId(event.target.value)}
+                >
+                  {editableDays.map((day, index) => (
+                    <option key={day.id} value={day.id}>
+                      {`Day ${index + 1}${day.date ? ` - ${day.date}` : ""}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <p className="itn-editor-help">
                 Edit each point directly using time and activity fields, then submit.
               </p>
-              <p className="itn-editor-help">
-                Dates accept flexible format: 2026-07-24, 28 feb, 28/02, 28-02-2026.
-              </p>
               <div className="itn-day-editor-list">
-                {editableDays.map((day, dayIndex) => (
-                  <div className="itn-day-editor-card" key={day.id}>
+                {selectedEditableDay && (
+                  <div className="itn-day-editor-card" key={selectedEditableDay.id}>
                     <div className="itn-day-editor-head">
-                      <label htmlFor={`day-date-${day.id}`}>Date</label>
+                      <label htmlFor={`day-date-${selectedEditableDay.id}`}>Date</label>
                       <input
-                        id={`day-date-${day.id}`}
+                        id={`day-date-${selectedEditableDay.id}`}
                         className="itn-input-date"
-                        type="text"
-                        value={day.date}
-                        onChange={(event) => updateDayDate(day.id, event.target.value)}
-                        placeholder="e.g. 28 feb"
+                        type="date"
+                        value={isIsoDate(selectedEditableDay.date) ? selectedEditableDay.date : ""}
+                        onChange={(event) =>
+                          updateDayDate(selectedEditableDay.id, event.target.value)
+                        }
                       />
                       <button
                         type="button"
                         className="itn-row-btn itn-row-btn-danger"
-                        onClick={() => removeDayBlock(day.id)}
+                        onClick={() => removeDayBlock(selectedEditableDay.id)}
                         disabled={editableDays.length <= 1}
                       >
                         Remove day
@@ -508,31 +598,41 @@ export default function ItineraryPlannerPage() {
                       <span>Action</span>
                     </div>
 
-                    {day.points.map((point, pointIndex) => (
+                    {selectedEditableDay.points.map((point, pointIndex) => (
                       <div className="itn-point-row" key={point.id}>
                         <input
                           className="itn-input-time"
                           type="time"
                           value={point.time}
                           onChange={(event) =>
-                            updatePointField(day.id, point.id, "time", event.target.value)
+                            updatePointField(
+                              selectedEditableDay.id,
+                              point.id,
+                              "time",
+                              event.target.value,
+                            )
                           }
-                          aria-label={`Time for day ${dayIndex + 1} point ${pointIndex + 1}`}
+                          aria-label={`Time for day ${selectedDayIndex + 1} point ${pointIndex + 1}`}
                         />
                         <input
                           className="itn-input-activity"
                           type="text"
                           value={point.activity}
                           onChange={(event) =>
-                            updatePointField(day.id, point.id, "activity", event.target.value)
+                            updatePointField(
+                              selectedEditableDay.id,
+                              point.id,
+                              "activity",
+                              event.target.value,
+                            )
                           }
                           placeholder="Enter activity summary"
-                          aria-label={`Activity for day ${dayIndex + 1} point ${pointIndex + 1}`}
+                          aria-label={`Activity for day ${selectedDayIndex + 1} point ${pointIndex + 1}`}
                         />
                         <button
                           type="button"
                           className="itn-row-btn itn-row-btn-danger"
-                          onClick={() => removePointRow(day.id, point.id)}
+                          onClick={() => removePointRow(selectedEditableDay.id, point.id)}
                         >
                           Remove
                         </button>
@@ -542,12 +642,12 @@ export default function ItineraryPlannerPage() {
                     <button
                       type="button"
                       className="itn-row-btn"
-                      onClick={() => addPointRow(day.id)}
+                      onClick={() => addPointRow(selectedEditableDay.id)}
                     >
                       Add point
                     </button>
                   </div>
-                ))}
+                )}
               </div>
 
               <div className="itn-editor-actions">

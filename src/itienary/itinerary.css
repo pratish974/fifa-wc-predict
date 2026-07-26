@@ -142,6 +142,13 @@
   color: #0f172a;
 }
 
+.itn-today-label {
+  margin: 6px 0 0;
+  color: #0369a1;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .itn-editor-wrap {
   padding: 12px;
   display: grid;
@@ -250,11 +257,38 @@
   padding: 12px;
 }
 
+.itn-day-grid-horizontal {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  overflow: visible;
+}
+
 .itn-day-card {
   border: 1px solid #dce8f0;
   border-radius: 12px;
   padding: 12px;
   background: #f8fbff;
+}
+
+.itn-day-grid-horizontal .itn-day-card {
+  min-width: 0;
+}
+
+.itn-day-card.is-today {
+  border-color: #38bdf8;
+  background: linear-gradient(180deg, #eff6ff 0%, #f0fdfa 100%);
+  box-shadow: inset 0 0 0 1px #7dd3fc;
+}
+
+.itn-day-card.is-past {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+}
+
+.itn-day-card.is-past h3,
+.itn-day-card.is-past li p {
+  color: #64748b;
 }
 
 .itn-day-card h3 {
@@ -388,6 +422,14 @@
 @media (min-width: 860px) {
   .itn-day-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .itn-day-grid-horizontal {
+    grid-template-columns: 1fr;
+  }
+
+  .itn-day-grid-horizontal .itn-day-card {
+    min-width: 0;
   }
 }
 

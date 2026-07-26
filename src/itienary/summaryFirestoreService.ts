@@ -2,6 +2,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase/firebase";
 import {
   ItinerarySummary,
+  ItineraryInput,
   PlacesToEatRecord,
   PlacesToVisitRecord,
 } from "./types";
@@ -11,6 +12,7 @@ type StoredSummaryDoc = {
   editorText?: string;
   placesToVisit?: PlacesToVisitRecord[];
   placesToEat?: PlacesToEatRecord[];
+  itinerary?: Partial<ItineraryInput>;
 };
 
 export async function loadLatestSummaryFromFirestore(
@@ -24,6 +26,16 @@ export async function loadLatestSummaryFromFirestore(
   }
 
   const data = snap.data() as {
+    itineraryId?: string;
+    title?: string;
+    tripTitle?: string;
+    locationRegion?: string;
+    startDate?: string;
+    endDate?: string;
+    status?: ItineraryInput["status"];
+    createdBy?: string;
+    updatedBy?: string;
+    itinerary?: Partial<ItineraryInput>;
     summary?: ItinerarySummary;
     editorText?: string;
     sections?: {
@@ -71,14 +83,32 @@ export async function loadLatestSummaryFromFirestore(
     editorText: data.editorText,
     placesToVisit: data.sections?.locations?.placesToVisit,
     placesToEat: data.sections?.locations?.placesToEatAround,
+    itinerary: {
+      itineraryId:
+        data.itinerary?.itineraryId || data.itineraryId || resolvedSummary.itineraryId || itineraryId,
+      tripTitle: data.title || data.tripTitle || data.itinerary?.tripTitle,
+      locationRegion: data.locationRegion || data.itinerary?.locationRegion,
+      startDate: data.startDate || data.itinerary?.startDate,
+      endDate: data.endDate || data.itinerary?.endDate,
+      status: data.status || data.itinerary?.status,
+      createdBy: data.createdBy || data.itinerary?.createdBy,
+      updatedBy: data.updatedBy || data.itinerary?.updatedBy,
+      days: data.itinerary?.days,
+    },
   };
 }
 
 export async function saveLatestSummaryToFirestore(params: {
   itineraryId: string;
+  tripTitle: string;
   summary: ItinerarySummary;
   editorText: string;
   locationRegion: string;
+  startDate: string;
+  endDate: string;
+  status: ItineraryInput["status"];
+  createdBy: string;
+  updatedBy: string;
   placesToVisit: PlacesToVisitRecord[];
   placesToEat: PlacesToEatRecord[];
 }): Promise<void> {
@@ -88,7 +118,24 @@ export async function saveLatestSummaryToFirestore(params: {
     summaryRef,
     {
       itineraryId: params.itineraryId,
+      title: params.tripTitle,
+      tripTitle: params.tripTitle,
       locationRegion: params.locationRegion,
+      startDate: params.startDate,
+      endDate: params.endDate,
+      status: params.status,
+      createdBy: params.createdBy,
+      updatedBy: params.updatedBy,
+      itinerary: {
+        itineraryId: params.itineraryId,
+        tripTitle: params.tripTitle,
+        locationRegion: params.locationRegion,
+        startDate: params.startDate,
+        endDate: params.endDate,
+        status: params.status,
+        createdBy: params.createdBy,
+        updatedBy: params.updatedBy,
+      },
       summary: {
         ...params.summary,
         version: 1,
