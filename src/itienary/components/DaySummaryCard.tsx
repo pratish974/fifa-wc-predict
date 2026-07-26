@@ -1,13 +1,21 @@
 import { SummaryDay } from "../types";
-import { formatDuration, formatIsoDate } from "../utils";
+import { formatIsoDate } from "../utils";
 
 type DaySummaryCardProps = {
   day: SummaryDay;
+  isToday?: boolean;
+  isPast?: boolean;
 };
 
-export default function DaySummaryCard({ day }: DaySummaryCardProps) {
+export default function DaySummaryCard({
+  day,
+  isToday = false,
+  isPast = false,
+}: DaySummaryCardProps) {
+  const className = `itn-day-card${isToday ? " is-today" : ""}${isPast ? " is-past" : ""}`;
+
   return (
-    <article className="itn-day-card">
+    <article className={className}>
       <h3>{formatIsoDate(day.date)}</h3>
 
       <ul>
@@ -17,16 +25,7 @@ export default function DaySummaryCard({ day }: DaySummaryCardProps) {
               <strong>{point.originalTime ?? "No time"}</strong>
               {" - "}
               {point.text}
-              {" ("}
-              {formatDuration(point.estimatedDurationMinutes)}
-              {")"}
             </p>
-
-            {point.suggestedStartTime && point.suggestedEndTime && (
-              <p className="itn-suggested-time">
-                Suggested slot: {point.suggestedStartTime} to {point.suggestedEndTime}
-              </p>
-            )}
           </li>
         ))}
       </ul>
