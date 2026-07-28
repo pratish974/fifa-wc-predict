@@ -84,8 +84,55 @@ function getFriendlyFirestoreError(error: unknown, phase: "read" | "write"): str
     : "Submit failed. Could not save data to Firestore.";
 }
 
+function parseTimeToMinutes(time: string | null | undefined): number | null {
+  if (!time) {
+    return null;
+  }
+
+  const match = time.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) {
+    return null;
+  }
+
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function sortSummaryDaysByDateAndTime(summaryDays: PlannerSnapshot["summary"]["summaryDays"]) {
+  return [...summaryDays]
+    .map((day) => ({
+      ...day,
+      points: [...day.points].sort((a, b) => {
+        const left = parseTimeToMinutes(a.originalTime);
+        const right = parseTimeToMinutes(b.originalTime);
+
+        if (left === null && right === null) return 0;
+        if (left === null) return 1;
+        if (right === null) return -1;
+        return left - right;
+      }),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function sortEditableDaysByDateAndTime(days: EditableDay[]): EditableDay[] {
+  return [...days]
+    .map((day) => ({
+      ...day,
+      points: [...day.points].sort((a, b) => {
+        const left = parseTimeToMinutes(a.time);
+        const right = parseTimeToMinutes(b.time);
+
+        if (left === null && right === null) return 0;
+        if (left === null) return 1;
+        if (right === null) return -1;
+        return left - right;
+      }),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function mapSummaryToEditableDays(snapshot: PlannerSnapshot): EditableDay[] {
-  const days = snapshot.summary.summaryDays.map((day) => ({
+  const days = sortSummaryDaysByDateAndTime(snapshot.summary.summaryDays).map((day) => ({
     id: makeId("day"),
     date: day.date,
     points: day.points.map((point) => ({
@@ -133,7 +180,7 @@ function parseStoredEditableDays(value: string | undefined): EditableDay[] | nul
       }))
       .filter((day) => day.points.length > 0);
 
-    return sanitized.length > 0 ? sanitized : null;
+    return sanitized.length > 0 ? sortEditableDaysByDateAndTime(sanitized) : null;
   } catch {
     return null;
   }
@@ -159,6 +206,7 @@ function buildSnapshotFromFirestore(params: {
     itinerary.endDate ||
     params.summary.summaryDays[params.summary.summaryDays.length - 1]?.date ||
     startDate;
+  const sortedSummaryDays = sortSummaryDaysByDateAndTime(params.summary.summaryDays);
 
   return {
     currentUser: {
@@ -178,7 +226,10 @@ function buildSnapshotFromFirestore(params: {
       updatedBy: itinerary.updatedBy || storedUser?.id || "system",
       days: itinerary.days || [],
     },
-    summary: params.summary,
+    summary: {
+      ...params.summary,
+      summaryDays: sortedSummaryDays,
+    },
     placesToVisit: params.placesToVisit,
     placesToEat: params.placesToEat,
   };
@@ -214,7 +265,6 @@ export default function ItineraryPlannerPage() {
 
         if (!saved?.summary) {
           setError("No itinerary data found in Firestore.");
-          setLoading(false);
           return;
         }
 
@@ -230,12 +280,14 @@ export default function ItineraryPlannerPage() {
 
         setSnapshot(firestoreSnapshot);
         const restoredEditor = parseStoredEditableDays(saved.editorText);
-        setEditableDays(restoredEditor || mapSummaryToEditableDays(firestoreSnapshot));
+        setEditableDays(
+          restoredEditor || sortEditableDaysByDateAndTime(mapSummaryToEditableDays(firestoreSnapshot)),
+        );
         setEditableVisitPlaces(visitPlaces);
         setEditableEatPlaces(eatPlaces);
-        setLoading(false);
       } catch (syncError) {
         setError(getFriendlyFirestoreError(syncError, "read"));
+      } finally {
         setLoading(false);
       }
     };
