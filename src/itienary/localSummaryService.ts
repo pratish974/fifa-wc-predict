@@ -243,6 +243,27 @@ function normalizeEditableDate(input: string, referenceYear: number): string | n
   return null;
 }
 
+function sortSummaryPointsByTime(points: SummaryPoint[]): SummaryPoint[] {
+  return [...points].sort((a, b) => {
+    const left = a.originalTime;
+    const right = b.originalTime;
+
+    if (left && right) {
+      return left.localeCompare(right);
+    }
+
+    if (left) {
+      return -1;
+    }
+
+    if (right) {
+      return 1;
+    }
+
+    return 0;
+  });
+}
+
 export function buildSummaryFromEditableDays(
   params: BuildSummaryFromRowsParams,
 ): ItinerarySummary {
@@ -285,7 +306,7 @@ export function buildSummaryFromEditableDays(
 
       return {
         date: normalizedDate,
-        points,
+        points: sortSummaryPointsByTime(points),
       };
     })
     .filter((day): day is SummaryDay => day !== null)
