@@ -30,7 +30,11 @@ export function isGoogleMapsUrl(input: string): boolean {
     }
 
     const host = parsed.hostname.toLowerCase();
-    return host === "maps.google.com" || host.endsWith(".google.com");
+    return (
+      host === "maps.app.goo.gl" ||
+      host === "maps.google.com" ||
+      host.endsWith(".google.com")
+    );
   } catch {
     return false;
   }
